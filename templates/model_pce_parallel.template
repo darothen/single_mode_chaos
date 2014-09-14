@@ -1,0 +1,62 @@
+environment
+    tabular_graphics_data
+        tabular_graphics_file 'model_pce.dat'
+    {% if graphics %}graphics{% endif %}
+
+method
+    id_method 'pce'
+    polynomial_chaos
+
+    {{ pce_directive }} 
+
+    sample_type lhs 
+    samples = 10000 rng rnum2
+    variance_based_decomp
+
+variables
+
+    {%- if uniform_vars %}
+    {% set vs = uniform_vars %}
+    uniform_uncertain {{ vs|length }}
+        lower_bounds {% for v in vs %}{{ v[3][1] }} {% endfor %}
+        upper_bounds {% for v in vs %}{{ v[3][2] }} {% endfor %}
+        descriptors {% for v in vs %}'{{ v[0] }}' {% endfor %}
+    {% endif %}
+
+    {%- if loguniform_vars %}
+    {% set vs = loguniform_vars %}
+    loguniform_uncertain {{ vs|length }}
+        lower_bounds {% for v in vs %}{{ v[3][1] }} {% endfor %}
+        upper_bounds {% for v in vs %}{{ v[3][2] }} {% endfor %}
+        descriptors {% for v in vs %}'{{ v[0] }}' {% endfor %}
+    {% endif %}
+
+    {%- if normal_vars %}
+    {% set vs = normal_vars %}
+    normal_uncertain {{ vs|length }}
+        means {% for v in vs %}{{ v[3][1] }} {% endfor %}
+        std_deviations {% for v in vs %}{{ v[3][2] }} {% endfor %}
+        descriptors {% for v in vs %}'{{ v[0] }}' {% endfor %}
+    {% endif %}
+
+interface
+    analysis_drivers 'model_run.py'
+        fork 
+        asynchronous 
+        evaluation_concurrency = 40
+        analysis_concurrency = 40
+        parameters_file 'model_run.in'
+        results_file 'model_run.out'
+        file_tag
+    
+responses
+    descriptors {% for r in responses %}'{{ r }}' {% endfor %}
+    response_functions 1
+    {%- if "use_derivatives" in pce_directive %}
+    numerical_gradients
+	interval_type central
+	fd_gradient_step_size = 0.001
+    {% else %}
+    no_gradients
+    {% endif %}
+    no_hessians

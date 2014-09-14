@@ -1,0 +1,30 @@
+#!/usr/bin/env python
+{% for import in imports -%}
+{{ import }} 
+{% endfor %}
+
+def dakota_interface_list(**kwargs):
+
+    num_fns  = kwargs['functions']
+    labels   = kwargs['av_labels']
+    num_vars = kwargs['variables']
+    eval_id  = kwargs['currEvalId']
+    x = kwargs['av']
+
+    {%- for v in variable_symbols %}
+    {{ v }} = x[{{ loop.index0 }}]
+    {%- endfor %}
+
+    retval = dict([])
+    func_eval = {{ function_name }}({{ variable_symbols|join(', ') }})
+
+    if num_fns == 1:
+        retval['fns'] = [func_eval, ]
+    else:
+        reval['fns'] = [val for val in func_eval]
+
+    return (retval)
+
+def {{ function_name }}({{ variable_symbols|join(', ') }}, fn_toggle=None):
+{{- function }}
+
