@@ -28,6 +28,8 @@ stat_label = "RMSE: {rmse:1.2f}\n" + \
 
 exp_name = "pcm_ols_parcel"
 
+plot_dir = "plots/"
+
 res_min = -14
 res_max = -2
 #res_min = 0
@@ -378,7 +380,7 @@ diag CDNC eval
 
         c = raw_input("save/continue?")
         if c == "y":
-            plt.savefig(exp_name+"_"+run_name[-1]+".pdf", 
+            plt.savefig(plot_dir+exp_name+"_"+run_name[-1]+".pdf", 
                         transparent=True, bbox_inches='tight')
 
 ###########################################################
