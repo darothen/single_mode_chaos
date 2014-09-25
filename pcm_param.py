@@ -1,7 +1,7 @@
 """
 Hand-crafted wrapper of PCM results derived using DAKOTA. 
 
-Version: 9/2/2014
+Version: 9/24/2014
 
 ## The set of variables about which to perform the PCE
 ## symbol, name, [prior, *parameters], meta(dictionary)
@@ -23,6 +23,9 @@ Notes:
        with the parameterization script.
 
     2) Only the listed runs and orders will be saved and made available.
+
+    3) By default, will attempt to read in a saved binary file with the coefficient tables
+       but will fail gracefully if not available.
 """
 
 import h5py
@@ -45,6 +48,26 @@ RUNS = {
     "pcm_lars_parcel": [2, 3, 4, 5],
     "pcm_lasso_parcel": [2, 3, 4, 5],
 }
+
+RUNS_SAVE = {}
+
+## Load data into memory
+try:
+    store = h5py.File(STORE_FN, "r")
+    for pcm, levels in RUNS.iteritems():
+        save_dict = {}
+        for level in levels:
+            level = "expansion_order_"+str(level)
+            ## Access the necessary PCM parameters from the stored data
+            group = store["%s/%s" % (pcm, level)]
+            coeffs = np.array(group['coeffs'][:])
+            orders = np.array(group['orders'][:])
+            max_orders = np.array(group['max_orders'][:])
+            save_dict[level] = {'coeffs':coeffs, 'max_orders':max_orders, 'orders':orders}
+        RUNS_SAVE[pcm] = save_dict
+    store.close()
+except IOError:
+    print "Could not open coefficient file %s, check to see it is available." % STORE_FN
 
 def uni_to_uni(x, ai, bi, af=-1., bf=1.):    
     """ Transform a uniform random variable to one with another set
@@ -94,6 +117,42 @@ def project(x):
         y.append(uni_to_uni(xi, ai, bi))
     return np.array(y)
 
+@jit("f8(i8[:,:],f8[:],f8[:,:])")
+def poly_eval(orders, coeffs, zin):
+    """
+    Interior, polynomial-evaluation loop of the parameterization.
+
+    Parameters
+    ----------
+    orders : ndarray of integers
+        the nterms x nvars matrix corresponding to the order of each
+        legendre basis comprising each monomial in the polynomial
+    coeffs : ndarray of floats
+        an nterm length vector of the chaos coefficients
+    zin : ndarray of floats 
+        evaluations of each order orthogonal polynomial for the given
+        number of inputs, with shape nvars x max_order, where max_order
+        is the highest order term in the expansion.
+
+    Returns
+    -------
+    evaluation : float
+        evaluation of the polynomial
+
+    """
+
+    nterms = orders.shape[0]
+    nvars = orders.shape[1]
+
+    evaluation = 0.
+    for row in xrange(nterms):
+        row_eval = 1.
+        for col in xrange(nvars):
+            row_eval *= zin[col, orders[row, col]]
+        evaluation += row_eval*coeffs[row]
+
+    return evaluation
+
 def param(V, T, P, aerosols=[],
           mus=[], sigmas=[], Ns=[], kappas=[],
           pcm=RUNS.keys()[0], level="expansion_order_3"):
@@ -121,43 +180,22 @@ def param(V, T, P, aerosols=[],
     ## Project into orthogonal polynomial space
     z = project([lnN, mu, sigma, kappa, lnV, T, P])
 
-    ## Access the necessary PCM parameters from the stored data
-    store = h5py.File(STORE_FN, "r")
-    group = store["%s/%s" % (pcm, level)]
-    coeffs = group['coeffs'][:]
-    orders = group['orders'][:]
-    max_orders = group['max_orders'][:]
-    store.close()
+    ## Retrieve the specified chaos expansion polynomial details
+    coeffs = RUNS_SAVE[pcm][level]['coeffs'] 
+    orders = RUNS_SAVE[pcm][level]['orders'] 
+    max_orders = RUNS_SAVE[pcm][level]['max_orders'] 
 
     nterms = len(coeffs)
     nvars = len(z)
-
-    if DEBUG: 
-        print "max_orders", max_orders
-        print "nterms", nterms
-        print "nvars", nvars
 
     ## Step 1) Evaluate the necessary polynomial orders
     poly_evals = []
     for zi, order in zip(z, max_orders):
         poly_evals.append([op.eval_legendre(n, zi) for n in xrange(order+1)])
-    if DEBUG: print poly_evals
+    poly_evals = np.array(poly_evals)
 
-    ## Step 2) Loop through arrays and evaluate polynomial
-    evaluation = 0.
-    for i in xrange(nterms):
-        row = orders[i]
-        if DEBUG: print i, coeffs[i], orders[i]
-
-        row_eval = 1.
-        for n in xrange(nvars):
-            order = row[n]
-            p_zi = poly_evals[n][order]
-            if DEBUG: print "   ", n, p_zi
-            row_eval *= p_zi
-        if DEBUG: print "RUNNING EVAL -> ", evaluation,
-        evaluation += coeffs[i]*row_eval
-        if DEBUG: print evaluation
+    ## Step 2) Evaluate the polynomial 
+    evaluation = poly_eval(orders, coeffs, poly_evals)
 
     ## Step 3) This gives us ln(Smax), so now we return Smax
     Smax = np.exp(evaluation)
