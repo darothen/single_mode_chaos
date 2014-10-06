@@ -26,7 +26,7 @@ stat_label = "RMSE: {rmse:1.2f}\n" + \
              " R$^2$: {r2:1.2f}\n" + \
              " MRE: {mre:2.2f}$\%$ ({mre_std:2.2f}$\%$)"
 
-exp_name = "pcm_ols_parcel"
+exp_name = "tri_modal_ols"
 
 plot_dir = "plots/"
 
@@ -51,6 +51,7 @@ results_dict = pickle.load(open("%s_results.dict" % exp_name, 'r'))
 
 ## Clean up - remove expansion order 0 (it's obviously never good)
 if "expansion_order_0" in results_dict: del results_dict['expansion_order_0']
+if "expansion_order_5" in results_dict: del results_dict['expansion_order_5']
 
 n_runs = len(results_dict.keys())
 for run_name, folder in results_dict.iteritems():
@@ -62,7 +63,7 @@ for run_name, folder in results_dict.iteritems():
 
 dataset     = np.load("%s_LHS_sample.npz" % exp_name)
 design      = dataset['design']
-Ns = np.exp(design[0, :])
+Ns = np.sum(np.exp(design[:3,:]), axis=0).shape
 Vs = np.exp(design[4, :])
 z_design    = dataset['z_design']
 lhs_results = dataset['results']
@@ -208,9 +209,9 @@ response fn eval
         fn_nact = lambda z, smax : fn(*z, fn_toggle=smax)
         pce_nacts = np.array([fn_nact(z, np.exp(smax)) for z, smax in zipped])
 
-        ss = np.linspace(0, 10000, 100)
-        ax_nact.set_xlim(0, 10000)
-        ax_nact.set_ylim(0, 10000)
+        ss = np.linspace(0, 30000, 100)
+        ax_nact.set_xlim(0, 30000)
+        ax_nact.set_ylim(0, 30000)
         ax_nact.set_xlabel("Analytical")
         ax_nact.set_ylabel("Emulator")
         ax_nact.set_title("Computed CDNC", loc='left')

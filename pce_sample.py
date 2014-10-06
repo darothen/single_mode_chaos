@@ -5,7 +5,7 @@ from functools import partial
 import model_run
 from dist_tools import design_lhs_exp, map_transfer_fcns
 
-exp_name = "pcm_ols_parcel"
+exp_name = "tri_modal_ols"
 n_samples = int(1e4)
 
 PARALLEL = True
@@ -50,13 +50,14 @@ if not os.path.exists(sample_fn) or recompute:
         dv = client[:]
         dv['z_func'] = z_func
         dv['fn'] = fn
+        fn_par = lambda z : fn(*z)
+        dv['fn_par'] = fn_par
 
         cwd = os.getcwd()
         dv.execute("import sys; sys.path.append('%s'); import model_run" % cwd)
 
         print "Executing in parallel"
         view = client.load_balanced_view()
-        fn_par = lambda z : fn(*z)
         results = view.map_async(fn_par, design.T, ordered=True)
         results.wait_interactive()
 
