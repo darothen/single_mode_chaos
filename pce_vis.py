@@ -28,6 +28,8 @@ stat_label = "RMSE: {rmse:1.2f}\n" + \
 
 exp_name = "tri_modal_ols"
 
+z_func = lambda z: np.exp(z)
+
 plot_dir = "plots/"
 
 res_min = -14
@@ -63,8 +65,8 @@ for run_name, folder in results_dict.iteritems():
 
 dataset     = np.load("%s_LHS_sample.npz" % exp_name)
 design      = dataset['design']
-Ns = np.sum(np.exp(design[:3,:]), axis=0).shape
-Vs = np.exp(design[4, :])
+Ns = np.sum(z_func(design[:4,:]), axis=0)
+Vs = z_func(design[4, :])
 z_design    = dataset['z_design']
 lhs_results = dataset['results']
 lhs_nacts   = dataset['Nacts']
@@ -207,11 +209,11 @@ response fn eval
         zipped = zip(design.T, pce_lhs_results)
 
         fn_nact = lambda z, smax : fn(*z, fn_toggle=smax)
-        pce_nacts = np.array([fn_nact(z, np.exp(smax)) for z, smax in zipped])
+        pce_nacts = np.array([fn_nact(z, z_func(smax)) for z, smax in zipped])
 
-        ss = np.linspace(0, 30000, 100)
-        ax_nact.set_xlim(0, 30000)
-        ax_nact.set_ylim(0, 30000)
+        ss = np.linspace(0, 40000, 100)
+        ax_nact.set_xlim(0, 40000)
+        ax_nact.set_ylim(0, 40000)
         ax_nact.set_xlabel("Analytical")
         ax_nact.set_ylabel("Emulator")
         ax_nact.set_title("Computed CDNC", loc='left')
@@ -296,7 +298,7 @@ diag CDNC eval
                         color="OrRd",
                        ax=ax_oo_bin)
         '''
-        Smaxes = np.exp(bin_df.ana_lhs)*100.
+        Smaxes = z_func(bin_df.ana_lhs)*100.
         rel_errs = bin_df.rel_lhs_diff*100.
         mask = (Smaxes > 0.01) & (Vs > 0.2) & (Vs < 10.0)
         print "   Number of vals in rel err sample:", len(rel_errs[mask])
@@ -327,7 +329,7 @@ diag CDNC eval
                        color="OrRd",
                        ax=ax_nact_bin)
         '''
-        Smaxes = np.exp(bin_df.ana_lhs)*100.
+        Smaxes = z_func(bin_df.ana_lhs)*100.
         rel_errs = bin_df.rel_nacts_diff*100.
         mask = (Smaxes > 0.01)  & (Vs > 0.2) & (Vs < 10.0)
         ax_nact_bin.scatter(Smaxes[mask], rel_errs[mask], 
@@ -353,7 +355,7 @@ diag CDNC eval
                        color="OrRd",
                        ax=ax_af_bin)
         '''
-        Smaxes = np.exp(bin_df.ana_lhs)*100.
+        Smaxes = z_func(bin_df.ana_lhs)*100.
         rel_errs = bin_df.rel_afs_diff*100.
         mask = (Smaxes > 0.01)  & (Vs > 0.2) & (Vs < 10.0)
         ax_af_bin.scatter(Smaxes[mask], rel_errs[mask],
@@ -416,7 +418,7 @@ if PLOT_6:
     for i, v in enumerate(var_names):
         if v.startswith("ln"): 
             var_names[i] = v[2:]
-            design_fix[i, :] = np.exp(design_fix[i, :])
+            design_fix[i, :] = z_func(design_fix[i, :])
 
     design_df = pd.DataFrame(design_fix.T, columns=var_names)
     design_df['label'] = labels

@@ -56,7 +56,7 @@ if not os.path.exists(sample_fn) or recompute:
         cwd = os.getcwd()
         dv.execute("import sys; sys.path.append('%s'); import model_run" % cwd)
 
-        print "Executing in parallel"
+        print "Executing Smax calculation in parallel"
         view = client.load_balanced_view()
         results = view.map_async(fn_par, design.T, ordered=True)
         results.wait_interactive()
@@ -70,11 +70,19 @@ if not os.path.exists(sample_fn) or recompute:
     good_design = design.T[results != -9999.0]
     good_z_design = z_design.T[results != -9999.0]
     good_results = results[results != -9999.0]
-    zipped = zip(good_design, good_results)
+    zipped = zip(good_design, z_func(good_results))
 
-    fn_nact = lambda z, smax : fn(*z, fn_toggle=smax)
-    Nacts = np.array([fn_nact(z, z_func(smax)) for z, smax in zipped])
+    fn_nact = lambda y : fn(*y[0], fn_toggle=y[1])
+    if PARALLEL:
+        print "Executing Nact calculation in parallel"
+        dv['fn_nact'] = fn_nact
+        Nacts = view.map_async(fn_nact, zipped, ordered=True)
+        Nacts.wait_interactive()
 
+    else:
+        Nacts = np.array([fn_nact(y) for y in zipped])
+
+    Nacts = np.array(Nacts[:])
     np.savez(sample_fn, results=good_results, design=good_design.T, z_design=good_z_design.T,
              Nacts=Nacts)
 
