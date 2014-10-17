@@ -16,7 +16,7 @@ def dakota_interface_list(**kwargs):
     {%- endfor %}
 
     retval = dict([])
-    func_eval = {{ function_name }}({{ variable_symbols|join(', ') }})
+    func_eval = {{ function_name }}({{ variable_symbols|join(', ') }}, run_id=eval_id)
 
     if num_fns == 1:
         retval['fns'] = [func_eval, ]
@@ -25,6 +25,6 @@ def dakota_interface_list(**kwargs):
 
     return (retval)
 
-def {{ function_name }}({{ variable_symbols|join(', ') }}, fn_toggle=None):
+def {{ function_name }}({{ variable_symbols|join(', ') }}, fn_toggle=None, run_id=0):
 {{- function }}
 
