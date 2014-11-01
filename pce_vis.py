@@ -45,6 +45,8 @@ PLOT_4 = False ## Error vs # terms in poly
 PLOT_5 = True ## Binned plots
 PLOT_6 = True ## LHS Scatter plots
 
+READ_CACHED_NACTS = False
+
 ###########################################################
 
 ## Unload the configured experiment
@@ -91,6 +93,7 @@ for i, run_name in enumerate(run_names):
     n_terms.append(run_dict['pce'].nterms)
 
     pce_lhs_results = run_dict['pce'](z_design)
+    np.save("%s_%s_pce_smax.npy" % (exp_name, run_name), pce_lhs_results)
     pce_lhs_results_positive = np.ma.masked_less_equal(pce_lhs_results, 0)
 
     pce_ecdf = ECDF(pce_lhs_results.ravel())
@@ -188,7 +191,12 @@ response fn eval
             ax_oo.scatter(lhs_results, pce_lhs_results, color='k', alpha=0.5, 
                 marker='.', s=12, label=run_name,
                 edgecolor='none')
+            #bins = np.linspace(res_min, res_max, 21)
+            #ax_oo.hist2d(lhs_results, pce_lhs_results, bins=bins,
+            #             norm=LogNorm())
             ax_oo.plot(ss, ss, color='grey', lw=3)#, zorder=100)
+            ax_oo.plot(ss, ss*.5, color='k', lw=1, alpha=0.8)#, zorder=100)
+            ax_oo.plot(ss, ss*2., color='k', lw=1, alpha=0.8)#, zorder=100)
         ax_oo.set_xlim(res_min, res_max)
         ax_oo.set_ylim(res_min, res_max)
         ax_oo.set_xlabel("Analytical")
@@ -211,26 +219,41 @@ response fn eval
         fn_nact = lambda z, smax : fn(*z, fn_toggle=smax)
         pce_nacts = np.array([fn_nact(z, z_func(smax)) for z, smax in zipped])
 
-        ss = np.linspace(0, 40000, 100)
-        ax_nact.set_xlim(0, 40000)
-        ax_nact.set_ylim(0, 40000)
+        if READ_CACHED_NACTS:
+            pce_nacts = np.load("%s_%s_pce_nact.npy" % (exp_name, run_name))
+        else:
+            pce_nacts = np.array([fn_nact(z, 10.**(smax)) for z, smax in zipped])
+            np.save("%s_%s_pce_nact.npy" % (exp_name, run_name), pce_nacts)
+
+        ss = np.linspace(10, 40000, 100)
+
         ax_nact.set_xlabel("Analytical")
         ax_nact.set_ylabel("Emulator")
         ax_nact.set_title("Computed CDNC", loc='left')
 
-        ax_nact.scatter(lhs_nacts, pce_nacts, 
-                        c=lhs_results, marker='.', s=12, label=run_name,
+        mask = lhs_results > np.log10(0.01/100) # 0.05 % Smax
+
+        ax_nact.scatter(lhs_nacts[mask], pce_nacts[mask], 
+                        c=lhs_results[mask], marker='.', s=12, label=run_name,
                         edgecolor='none', cmap=plt.get_cmap("OrRd"))
+        #bins = np.logspace(1, 4.4, 21)
+        #ax_nact.hist2d(lhs_nacts, pce_nacts)
         ax_nact.plot(ss, ss, color='grey', lw=3)#, zorder=100)
+        ax_nact.plot(ss, ss*.5, color='k', lw=1, alpha=0.8)#, zorder=100)
+        ax_nact.plot(ss, ss*2., color='k', lw=1, alpha=0.8)#, zorder=100)
+        ax_nact.semilogx()
+        ax_nact.semilogy()
+        ax_nact.set_xlim(10, 1000)
+        ax_nact.set_ylim(10, 1000)
 
         rmse = np.sqrt(np.sum(pce_nacts - lhs_nacts)**2.)/n_tot
         mae  = skm.mean_absolute_error(lhs_nacts, pce_nacts)
-        r2   = skm.r2_score(lhs_nacts, pce_nacts) 
+        r2   = skm.r2_score(lhs_nacts[mask], pce_nacts[mask]) 
         rel_err = 100*(pce_nacts - lhs_nacts)/lhs_nacts
         rel_err = np.ma.masked_greater(rel_err, 10)
 
-        mre = np.mean(rel_err)
-        mre_std = np.std(rel_err)
+        mre = np.mean(rel_err[mask])
+        mre_std = np.std(rel_err[mask])
 
         print """
 diag CDNC eval
@@ -267,6 +290,8 @@ diag CDNC eval
                       c=lhs_results, marker='.', s=12, label=run_name,
                       edgecolor='none', cmap=plt.get_cmap("OrRd"))
         ax_af.plot(ss, ss, color='grey', lw=3)#, zorder=100)
+        ax_af.plot(ss, ss*.5, color='k', lw=1, alpha=0.8)#, zorder=100)
+        ax_af.plot(ss, ss*2., color='k', lw=1, alpha=0.8)#, zorder=100)
 
     else: print "...skipping"
 
@@ -416,7 +441,7 @@ if PLOT_6:
     design_fix = design[:, ::50].copy()
     labels = np.random.randint(1, 4, len(design_fix[0, :]))
     for i, v in enumerate(var_names):
-        if v.startswith("ln"): 
+        if v.startswith("log"): 
             var_names[i] = v[2:]
             design_fix[i, :] = z_func(design_fix[i, :])
 

@@ -31,6 +31,13 @@ def design_lhs_exp(variables, maps, offsets=None, samples=int(1e4)):
             b = np.exp(b)
             offsets[i] = np.exp(offsets[i])
 
+        elif v[0].startswith("log"):
+            ## 10/26/2014
+            ## In accordance with above, but for log10 vars
+            a = 10.**a
+            b = 10.**b
+            offsets[i] = 10.**offsets[i]
+
         if offsets:
             ## These corrections with "offsets" re-center the interval
             ## so that the left endpoint is 0. I found that if arbitrary
@@ -57,6 +64,11 @@ def design_lhs_exp(variables, maps, offsets=None, samples=int(1e4)):
             a = np.log(a)
             b = np.log(b)
             design[:, i] = np.log(design[:, i])
+        elif v[0].startswith("log"):
+            ## 10/26/2014
+            a = np.log10(a)
+            b = np.log10(b)
+            design[:, i] = np.log10(design[:, i])
 
         z_design[:, i] = maps[i](design[:, i], a, b)
     design = design.T # in x-coords

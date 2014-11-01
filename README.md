@@ -1,12 +1,12 @@
 Title: PCE DAKOTA Utility and Analysis Scripts
 Author: Daniel Rothenberg
-Date: September 13, 2014
+Date: October 31, 2014
 Comment: This document summarizes the scripts used to perform the probabilistic collocation method with DAKOTA to compute a polynomial chaos expansion of the parcel model.
 Base Header Level: 3
 
 ## Overview
 
-This repository archives the scripts used to perform polynomial chaos expansions using the probabilistic collocation method with the DAKOTA software. Please see the [File Summary] for details on each particular file, including the output with which each is associated.
+This repository archives the scripts used to perform polynomial chaos expansions using the probabilistic collocation method with the DAKOTA software. Please see the File Summary for details on each particular file, including the output with which each is associated.
 
 ## File Summary 
 

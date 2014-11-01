@@ -6,6 +6,8 @@ import model_run
 from dist_tools import design_lhs_exp, map_transfer_fcns
 
 exp_name = "tri_modal_ols"
+CESM_SAMPLE = True
+CESM_FILENAME = "pce_params.csv"
 n_samples = int(1e4)
 
 PARALLEL = True
@@ -29,8 +31,20 @@ print variables
 dists = [v[3][0] for v in variables]
 offsets = [v[4] for v in variables]
 
-maps = map_transfer_fcns(dists, directive_base, True)
-design, z_design = design_lhs_exp(variables, maps, offsets, int(n_samples))
+
+if CESM_SAMPLE:
+    import pandas as pd
+    df = pd.read_csv("pce_params.csv")
+    design = df[[v[0] for v in variables]].values.T
+    z_design = np.empty_like(design)
+    for i, v in enumerate(variables):        
+        dist, a, b = v[3]
+        z_design[i, :] = maps[i](design[i, :], a, b)
+    #z_design = z_design.T
+else:
+	maps = map_transfer_fcns(dists, directive_base, True)
+    design, z_design = design_lhs_exp(variables, maps, offsets, int(n_samples))
+
 for i in xrange(len(variables)):
     print variables[i][0], variables[i][3][1], np.min(design[i, :]), \
           np.max(design[i, :]), variables[i][3][2]
@@ -72,7 +86,7 @@ if not os.path.exists(sample_fn) or recompute:
     good_results = results[results != -9999.0]
     zipped = zip(good_design, z_func(good_results))
 
-    fn_nact = lambda y : fn(*y[0], fn_toggle=y[1])
+    fn_nact = lambda z, smax : fn(*z, fn_toggle=smax)
     if PARALLEL:
         print "Executing Nact calculation in parallel"
         dv['fn_nact'] = fn_nact
@@ -80,7 +94,7 @@ if not os.path.exists(sample_fn) or recompute:
         Nacts.wait_interactive()
 
     else:
-        Nacts = np.array([fn_nact(y) for y in zipped])
+        Nacts = np.array([z, z_func(smax))) for z, smax in zipped])
 
     Nacts = np.array(Nacts[:])
     np.savez(sample_fn, results=good_results, design=good_design.T, z_design=good_z_design.T,
