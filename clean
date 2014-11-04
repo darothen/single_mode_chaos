@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+rm LHS*.out
+rm S4
+rm *.in
+rm *~
+rm *.pyc
+
+rm model_pce.out
+rm model_pce.in
+rm model_pce.dat
+rm model_run.py
+rm config.p
+rm dakota.rst
+rm dakota.rst.all
