@@ -18,6 +18,103 @@ from sympy import Symbol, Rational, Poly, S
 
 from dakota_poly import PolyChaosExp
 
+def extract_pce(responses, lines):
+    print "Extracting chaos expansion coefficients..."
+    pces = {}
+    for response in responses:
+        print "   ", response
+        ## Seek in output for final polynomial report
+        i_beg, i_end = None, None
+        for i, line in enumerate(lines):
+            if line.startswith("Coefficients of Polynomial Chaos Expansion for %s" \
+                               % responses):
+                i_beg = i+1
+            if i_beg and line.startswith("-------------------------"):
+                i_end = i
+                break
+
+        #print "Coefficients are between %d and %d" % (i_beg, i_end)
+        coeff_lines = lines[i_beg:i_end]
+        del(coeff_lines[1]) # remove the break row between header and data
+
+        ## Save to scratch file
+        coeff_fn = os.path.join(directory, "%s_coeffs_all" % response)
+        with open(coeff_fn, "w") as f:
+            for line in coeff_lines: 
+                #print line
+                f.write(line)
+
+        ## Convert to standard CSV
+        coeffs = pd.read_table(coeff_fn, delim_whitespace=True)
+        coeffs = coeffs[coeffs['coefficient'] != 0.]
+        coeffs.to_csv(coeff_fn)
+        #print coeffs.head(10)
+        #print coeffs
+
+        ## Build internal PCE representation / object
+        pces[response] = PolyChaosExp(coeffs, len(u_symbols))
+
+    ## Save to disk
+    fn = os.path.join(directory, "pce.p")
+    print "writing to %s" % fn
+    pickle.dump(pces, open(fn, "wb"))
+
+def extract_sobol(responses, lines):
+    print "Extracting Sobol indices..."
+
+    sobols = {}
+    for response in responses:
+        print "   ", response
+        ## 2) Seek forward in output to the matrix of Sobol' indices
+        for i, line in enumerate(lines):
+            line = line.strip()
+            if line.startswith("%s Sobol" % response):
+                break
+        i = i+2 # skip over the blank line and first header
+        
+        ## 3) Main and Total interactions
+        proc_list = []
+        for j in xrange(i, len(lines)):
+            line = lines[j]
+            if "Interaction" in line: 
+                j += 1
+                break
+            main, total, term = line.strip().split()
+            main, total = float(main), float(total)
+            proc_list.append((main, total, term))
+        mains, totals, terms = zip(*proc_list)
+
+        ## 4) Multi-term interactions
+        proc_list = []
+        for k in xrange(j, len(lines)):
+            line = lines[k]
+            if not line.strip(): break # Capture the blank line ending the block
+
+            bits = line.strip().split()
+            interaction = float(bits[0])
+            interact_terms = " ".join(sorted(bits[1:]))
+            proc_list.append((interaction, interact_terms))
+        all_interact, all_interact_terms = zip(*proc_list)
+
+        ## 5) Collect all the main terms together
+        mains = mains + all_interact
+        all_terms = terms + all_interact_terms
+        n_terms = [len(term.split()) for term in all_terms]
+
+        ## 6) Create DataFrame for saving
+        main_series = pd.Series(mains, index=all_terms)
+        total_series = pd.Series(totals, index=terms)
+        nterms_series = pd.Series(n_terms, index=all_terms)
+
+        sobol_df = pd.DataFrame({'Main': main_series, 
+                                 'Total': total_series,
+                                 'n_terms': nterms_series})
+        sobols[resonse] = sobol_df
+
+    fn = os.path.join(directory, "sobol.p")
+    print "writing to %s" % fn
+    pickle.dump(sobols, open(fn, "wb"))
+
 def poly_around(A, decimals=0):
     """
     Evenly round a polynomial to the given number of decimals.
@@ -32,7 +129,6 @@ half = Rational(1, 2)
 eighth = Rational(1, 8)
 sixteenth = Rational(1, 16)
 one_twenty_eigth = Rational(1, 128)
-
 
 def p(n, z=z): 
     """Legendre polynomial of order `n`"""
@@ -90,43 +186,13 @@ if __name__ == "__main__":
     variables = sorted(variables, key=itemgetter(2))
     u = [v[0] for v in variables]
     u_symbols = map(Symbol, u)
+    responses = setup_dict['responses']
 
     ## READ DAKOTA OUTPUT FILE
-
     with open(os.path.join(directory, "model_pce.out"), 'r') as f:
         lines = f.readlines()
 
-    ## Seek in output for final polynomial report
-    i_beg, i_end = None, None
-    for i, line in enumerate(lines):
-        if line.startswith("Coefficients of Polynomial Chaos Expansion"):
-            i_beg = i+1
-        if i_beg and line.startswith("-------------------------"):
-            i_end = i
-            break
-
-    #print "Coefficients are between %d and %d" % (i_beg, i_end)
-    coeff_lines = lines[i_beg:i_end]
-    del(coeff_lines[1]) # remove the break row between header and data
-
-    ## Save to scratch file
-    coeff_fn = os.path.join(directory, "coeffs_all")
-    with open(coeff_fn, "w") as f:
-        for line in coeff_lines: 
-            #print line
-            f.write(line)
-
-    ## Convert to standard CSV
-    coeffs = pd.read_table(coeff_fn, delim_whitespace=True)
-    coeffs = coeffs[coeffs['coefficient'] != 0.]
-    coeffs.to_csv(coeff_fn)
-    #print coeffs.head(10)
-    #print coeffs
-
-    ## Build internal PCE representation / object
-    pce = PolyChaosExp(coeffs, len(u_symbols))
-    pickle.dump(pce, open(os.path.join(directory, "pce.p"), "wb"))
-
-    #print pce
+    extract_pce(responses, lines)
+    extract_sobol(responses, lines)
 
 ##############################
