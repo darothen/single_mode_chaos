@@ -144,7 +144,7 @@ if __name__ == "__main__":
 
         ## Parameterizations
         if args.params:
-            fn_param = lambda z, smax : fn(*z, fn_toggle=smax)
+            fn_param = lambda z, smax : fn(*z, fn_toggle=True)
             if args.parallel:
                 zipped = zip(design.T, z_func(results))
                 dv['fn_param'] = fn_param
