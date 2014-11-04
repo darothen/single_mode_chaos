@@ -9,10 +9,6 @@ method
 
     {{ pce_directive }} 
 
-    sample_type lhs 
-    samples = 10000 rng rnum2
-    variance_based_decomp
-
 variables
 
     {%- if uniform_vars %}

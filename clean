@@ -2,6 +2,8 @@
 rm LHS*.out
 rm S4
 rm *.in
+rm model_run.in.*
+rm model_run.out.*
 rm *~
 rm *.pyc
 

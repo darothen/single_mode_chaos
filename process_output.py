@@ -21,20 +21,29 @@ from dakota_poly import PolyChaosExp
 def extract_pce(responses, lines):
     print "Extracting chaos expansion coefficients..."
     pces = {}
+    i_parsed = 0
     for response in responses:
         print "   ", response
         ## Seek in output for final polynomial report
         i_beg, i_end = None, None
         for i, line in enumerate(lines):
+            if i < i_parsed: continue
+            line = line.strip()
             if line.startswith("Coefficients of Polynomial Chaos Expansion for %s" \
-                               % responses):
+                               % response):
                 i_beg = i+1
-            if i_beg and line.startswith("-------------------------"):
-                i_end = i
-                break
+                print "    FOUND START", i_beg
+            elif i_beg:
+                if line.startswith("-------------------------") or \
+                   line.startswith("Coefficients"):
+                    i_end = i
+                    print "    FOUND END", i_end
+                    break
+        i_parsed = i
 
-        #print "Coefficients are between %d and %d" % (i_beg, i_end)
+        print "    Coefficients are between %d and %d" % (i_beg, i_end)
         coeff_lines = lines[i_beg:i_end]
+
         del(coeff_lines[1]) # remove the break row between header and data
 
         ## Save to scratch file
@@ -48,7 +57,6 @@ def extract_pce(responses, lines):
         coeffs = pd.read_table(coeff_fn, delim_whitespace=True)
         coeffs = coeffs[coeffs['coefficient'] != 0.]
         coeffs.to_csv(coeff_fn)
-        #print coeffs.head(10)
         #print coeffs
 
         ## Build internal PCE representation / object
@@ -62,6 +70,12 @@ def extract_pce(responses, lines):
 def extract_sobol(responses, lines):
     print "Extracting Sobol indices..."
 
+    for i, line in enumerate(lines):
+        if line.startswith("Global sensitivity indices for each response function:"):
+            break
+    print "Sobol indices begin at ", i
+    lines = lines[i+1:]
+
     sobols = {}
     for response in responses:
         print "   ", response
@@ -69,13 +83,18 @@ def extract_sobol(responses, lines):
         for i, line in enumerate(lines):
             line = line.strip()
             if line.startswith("%s Sobol" % response):
-                break
-        i = i+2 # skip over the blank line and first header
-        
+                i_beg = i+2
+            else:
+                if (("Sobol" in line) or 
+                   (line.startswith("-------------------"))):
+                    i_end = i
+                    break
+        lines_subset = lines[i_beg:i_end]
+        print response, "->", i_beg, i_end
+
         ## 3) Main and Total interactions
         proc_list = []
-        for j in xrange(i, len(lines)):
-            line = lines[j]
+        for j, line in enumerate(lines_subset):
             if "Interaction" in line: 
                 j += 1
                 break
@@ -86,8 +105,8 @@ def extract_sobol(responses, lines):
 
         ## 4) Multi-term interactions
         proc_list = []
-        for k in xrange(j, len(lines)):
-            line = lines[k]
+        for k in xrange(j, len(lines_subset)):
+            line = lines_subset[k]
             if not line.strip(): break # Capture the blank line ending the block
 
             bits = line.strip().split()
@@ -109,7 +128,10 @@ def extract_sobol(responses, lines):
         sobol_df = pd.DataFrame({'Main': main_series, 
                                  'Total': total_series,
                                  'n_terms': nterms_series})
-        sobols[resonse] = sobol_df
+        sobols[response] = sobol_df
+
+        ## Chop off processed lines
+        lines = lines[i_end:]
 
     fn = os.path.join(directory, "sobol.p")
     print "writing to %s" % fn

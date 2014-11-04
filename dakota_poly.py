@@ -44,6 +44,7 @@ class PolyChaosExp():
         ##    cols - the degree of each polynomial mixin
         self.orders = []
         for i, (ind, row) in enumerate(coeffs.iterrows()):
+            if self.debug: print i, ind, row
             row_orders = []
             first = i == 0
 
