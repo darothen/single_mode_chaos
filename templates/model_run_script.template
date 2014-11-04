@@ -29,7 +29,7 @@ if __name__ == "__main__":
         
     #############################
 
-    if not isinstance(results, list):
+    if not isinstance(results, (list, tuple)):
         results = [results, ]
 
     ## Write the output file
