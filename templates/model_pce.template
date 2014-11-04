@@ -48,7 +48,7 @@ interface
     
 responses
     descriptors {% for r in responses %}'{{ r }}' {% endfor %}
-    response_functions 1
+    response_functions {{ responses|length }}
     {%- if "use_derivatives" in pce_directive %}
     numerical_gradients
 	interval_type central
