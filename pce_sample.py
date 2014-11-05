@@ -61,7 +61,7 @@ if __name__ == "__main__":
 
     ## Was there a reference design set? If so, use that 
     if args.reference:
-        ref_design_name = args.references
+        ref_design_name = args.reference
         stored_design = pd.read_csv(args.reference)
         design = stored_design[[v[0] for v in variables]].values.T
         z_design = np.empty_like(design)
