@@ -5,84 +5,304 @@ import pandas as pd
 from statsmodels.distributions import ECDF
 
 import model_run
-from dist_tools import design_lhs_exp, map_transfer_fcns
 
 import matplotlib
-matplotlib.use("Qt4Agg")
 import matplotlib.pyplot as plt
 import seaborn as sns
 
 import sklearn.metrics as skm
+from statsmodels.graphics.gofplots import qqplot
 
-sns.set(style="ticks")
-sns.set_palette("Set2")
+import argparse
+
+parser = argparse.ArgumentParser(description="Visualize some PCE evaluation metrics")
+parser.add_argument("exp_name", type=str, help="name of PCM experiment to reference")
+parser.add_argument("-r", "--reference", type=str, required=True,
+                    help="Reference sample design to plot")
+parser.add_argument("-i", "--interact", action="store_true",
+                    help="Enable interactive mode (draw plots to screen)")
+parser.add_argument("--params", action='store_true', 
+                    help="Include plots for ARG/MBN parameterizations")
+parser.add_argument("--plots", nargs="+", type=str,
+                    help="Control which plots to produce")
+
+def compute_stats(obs, act):
+    mae = skm.mean_absolute_error(act, obs)
+    r2  = skm.r2_score(act, obs)
+    rmse  = np.sqrt(np.sum((obs-act)**2.)/len(act))
+    nrmse = rmse/np.sqrt(np.sum((act**2.)/len(act)))
+    
+
+    rel_err = 100.*(obs - act)/act
+    ## Mask egregiously high values (1000% error) which screw up the spread
+    rel_err = rel_err[np.abs(rel_err) <= 1000.]
+    mre = np.mean(rel_err)
+    mre_std = np.std(rel_err)
+
+    stats = {
+        'mae': mae, 'r2': r2, 'rmse': rmse, 'nrmse': nrmse,
+        'mre': mre, 'mre_std': mre_std,
+    }
+
+    return stats
+
+def plot_dists_base(param, parcel, var_name, param_name, lims, exp_name = '', savefig=False, **kwargs):
+    pct_levs = np.linspace(0., 100., 11)
+
+    fig, axs = plt.subplots(1, 2, figsize=(10, 4))
+    plt.subplots_adjust(wspace=0.25, bottom=0.15)
+    ax_cdf, ax_pdf = axs
+
+    ## Compute empirical CDFs
+    param_cdf = ECDF(param.ravel())
+    param_percentiles = [np.percentile(param.ravel(), x) for x in pct_levs]
+    parcel_cdf = ECDF(parcel.ravel())
+    parcel_percentiles = [np.percentile(parcel.ravel(), x) for x in pct_levs]
+
+    ax_cdf.plot(parcel_percentiles, pct_levs/100., color='k', lw=5,
+                   label="parcel model")
+    ax_cdf.plot(param_percentiles, pct_levs/100., "--o", ms=8, label=param_name)
+
+    ax_cdf.legend(loc='best')
+    ax_cdf.set_xlim(*lims)
+    ax_cdf.set_xlabel(var_name)
+    ax_cdf.set_ylim(0, 1)
+    ax_cdf.set_ylabel("Cumulative Probability")
+
+    ## PDFs
+    ax_pdf = sns.distplot(parcel, hist=False,
+                          color='k', label="parcel model", ax=ax_pdf,
+                          kde_kws={'lw': 5})
+    ax_pdf = sns.distplot(param, hist=False, kde_kws={'linestyle': 'dashed'},
+                          label=param_name, ax=ax_pdf)
+    ax_pdf.set_xlim(*lims)
+    ax_pdf.set_xlabel(var_name)
+    ax_pdf.set_ylabel("Probability Density")
+    ax_pdf.legend(loc="best")
+
+    if savefig:
+        plt.savefig(os.path.join(plot_dir, "%s_%s_%s_cdfs.pdf" % (exp_name, var_name, param_name)))
+
+    return ax_cdf, ax_pdf
+
+def plot_one_one_base(param, parcel, var_name, param_name, lims, coloring='k', loglog=False, ax=None, error_pct=0.5, exp_name='', savefig=False, **kwargs):
+    if not ax:
+        fig = plt.figure(figsize=(10, 6))
+        ax = fig.add_subplot(111)
+
+    ax.scatter(parcel, param, marker='.', s=30, c=coloring,
+               edgecolor='none', alpha=0.8, cmap=plt.get_cmap("OrRd"), **kwargs)
+    oo = np.linspace(lims[0], lims[1], 100)
+    ax.plot(oo, oo, color='grey', lw=3)
+    ax.plot(oo, oo*error_pct, color='k', lw=1, alpha=0.8)
+    ax.plot(oo, oo*(1.+error_pct), color='k', lw=1, alpha=0.8)
+
+    ax.set_xlim(lims)
+    ax.set_ylim(lims)
+    if loglog:
+        ax.loglog()
+
+    ax.set_xlabel("%s, parcel model" % var_name)
+    ax.set_ylabel("%s, %s" % (var_name, param_name))
+
+    stats = compute_stats(param, parcel)
+    ax.text(0.05, 0.775, stat_label.format(**stats),
+            transform=ax.transAxes, fontsize=12)
+
+    if savefig:
+        plt.savefig(os.path.join(plot_dir, "%s_%s_%s_oneone.pdf" % (exp_name, var_name, param_name)))
+
+    return ax
+
+###########################################################
+## Plot aesthetics and configuration
+
+sns.set(style="darkgrid", context="talk", palette="Dark2")
 plt.rc('text', usetex=True)
 plt.rc('font', family='serif')
 
 fn_fix = lambda s: s.replace("_", "\_")
+def param_name(s):
+    if s in ["ARG", "MBN"]:
+        return s 
+    else:
+        bits = s.split("_")
+        order = int(bits[-1])
+        return "PCE order %d" % order
 
-stat_label = "RMSE: {rmse:1.2f}\n" + \
+stat_label = "RMSE: {rmse:1.2f} ({nrmse:1.2f})\n" + \
              " MAE: {mae:1.2f}\n"  + \
              " R$^2$: {r2:1.2f}\n" + \
              " MRE: {mre:2.2f}$\%$ ({mre_std:2.2f}$\%$)"
 
-exp_name = "tri_modal_ols"
+z_func = lambda z: 10.**z
 
-z_func = lambda z: np.exp(z)
-
-plot_dir = "plots/"
-
-res_min = -14
-res_max = -2
-#res_min = 0
-#res_max = 3000
-use_log = False
-
-PLOT_1 = True ## PDFs/CDFS
-PLOT_2 = True ## Smax one-to-one plot
-PLOT_3 = True ## Nact/act-frac one-to-one plot
-PLOT_4 = False ## Error vs # terms in poly
-PLOT_5 = True ## Binned plots
-PLOT_6 = True ## LHS Scatter plots
-
-READ_CACHED_NACTS = False
+plot_dir = "figs/"
 
 ###########################################################
 
-## Unload the configured experiment
-exp_dict = pickle.load(open("%s_exp.dict" % exp_name, 'r'))
-results_dict = pickle.load(open("%s_results.dict" % exp_name, 'r'))
+if __name__ == "__main__":
 
-## Clean up - remove expansion order 0 (it's obviously never good)
-if "expansion_order_0" in results_dict: del results_dict['expansion_order_0']
-if "expansion_order_5" in results_dict: del results_dict['expansion_order_5']
+    args = parser.parse_args()
+    print "Creating plots for %s" % args.exp_name
+    print "   Sample data:", args.reference
+    if args.interact:
+        print "   Interactive mode"
+        plt.ion()
+    else:
+        plt.ioff()
+    if args.params:
+        print "   Plotting ARG/MBN figures"
+    if not args.plots:
+        ALL_PLOTS = True
+        print "   Plotting all plots"
+    else:
+        ALL_PLOTS = False
+        print "   Plotting", ", ".join(args.plots)
 
-n_runs = len(results_dict.keys())
-for run_name, folder in results_dict.iteritems():
-    pce = pickle.load(open(os.path.join("save", folder, "pce.p"), 'rb'))
-    results_dict[run_name] = { 
-        'foldername': folder, 
-        'pce': pce,
-    }
+    print "\n"
 
-dataset     = np.load("%s_LHS_sample.npz" % exp_name)
-design      = dataset['design']
-Ns = np.sum(z_func(design[:4,:]), axis=0)
-Vs = z_func(design[4, :])
-z_design    = dataset['z_design']
-lhs_results = dataset['results']
-lhs_nacts   = dataset['Nacts']
-print exp_name
-print "lhs", lhs_results.min(), lhs_results.max()
-print "\n\n\n"
+    ## Over-write plotting functions with exp_name
+    def plot_one_one(*v, **kw):
+        return plot_one_one_base(*v, exp_name=args.exp_name, savefig=(not args.interact), **kw)
+    def plot_dists(*v, **kw):
+        return plot_dists_base(*v, exp_name=args.exp_name, savefig=(not args.interact),**kw)
 
-lhs_ecdf = ECDF(lhs_results.ravel())
-pct_levs = np.linspace(1, 99, 99)
-lhs_percentiles = [np.percentile(lhs_results.ravel(), x) for x in pct_levs]
+    ## Unload the configured experiment
+    exp_dict = pickle.load(open("%s_exp.dict" % args.exp_name, 'r'))
+    results_dict = pickle.load(open("%s_results.dict" % args.exp_name, 'r'))
+    design_df = pd.read_csv("%s.csv" % args.reference, index_col=0)
+    results_df = pd.read_csv("%s_results.csv" % args.reference, index_col=0)
 
-n_terms = [] 
-RMSEs   = []
+    pce_keys = results_dict.keys()
+    if args.params: 
+        param_keys = pce_keys + ["ARG", "MBN"]
+    else:
+        param_keys = pce_keys
 
+    all_plots = {}
+
+
+    ###########################################################
+    ## SET 1) one-one plots
+    if ALL_PLOTS or "oneone" in args.plots:
+        print "One-one plots..."
+
+        oo_kwargs = { 'coloring': design_df['accom'], }
+
+        # a) log10(Smax)
+        var_key  = "Smax"
+        var_name = r"log10(S$_{max}$)"
+        lims     = [-4, -1]
+        parcel = results_df['%s_parcel' % var_key]
+        print var_name
+        for key in param_keys:
+            print "   ", key
+            ax = plot_one_one(results_df['%s_%s' % (var_key, key)], parcel,
+                              var_name, param_name(key), lims, **oo_kwargs)
+            fig = ax.get_figure()
+            all_plots[var_name, key] = (fig, ax)
+            if args.interact: plt.show()
+
+        # b) Smax
+        var_key  = "Smax"
+        var_name = r"S$_{max}$"
+        lims     = [1e-4, 5e-1]
+        parcel = z_func(results_df['%s_parcel' % var_key])
+        print var_name
+        for key in param_keys:
+            print "   ", key
+            ax = plot_one_one(z_func(results_df['%s_%s' % (var_key, key)]), parcel,
+                              var_name, param_name(key), lims, loglog=True, **oo_kwargs)
+            fig = ax.get_figure()
+            all_plots[var_name, key] = (fig, ax)
+            if args.interact: plt.show()
+
+        # c) Neq
+        var_key  = "Neq"
+        var_name = r"log10(N$_{eq}$)"
+        lims     = [1, 4]
+        parcel = results_df['%s_parcel' % var_key]
+        print var_name
+        for key in param_keys:
+            print "   ", key
+            ax = plot_one_one(results_df['%s_%s' % (var_key, key)], parcel,
+                              var_name, param_name(key), lims, **oo_kwargs)
+            fig = ax.get_figure()
+            all_plots[var_name, key] = (fig, ax)
+            if args.interact: plt.show()
+
+        # e) Nderiv
+        var_key  = "Nderiv"
+        var_name = r"log10(N$_{d}$)"
+        lims     = [1, 4]
+        parcel = results_df['Neq_parcel']
+        print var_name
+        for key in pce_keys:
+            print "   ", key
+            ax = plot_one_one(results_df['%s_%s' % (var_key, key)], parcel,
+                              var_name, param_name(key), lims, **oo_kwargs)
+            fig = ax.get_figure()
+            all_plots[var_name, key] = (fig, ax)
+            if args.interact: plt.show()
+
+
+    ###########################################################
+    ## SET 2) one-one plots
+    if ALL_PLOTS or "pdf" in args.plots:
+        print "CDFs/PDFs..."
+
+        pdf_kwargs = { }
+
+        # a) log10(Smax)
+        var_key  = "Smax"
+        var_name = r"log10(S$_{max}$)"
+        lims     = [-5, 0]
+        parcel = results_df['%s_parcel' % var_key]
+        print var_name
+        for key in param_keys:
+            print "   ", key
+            axs  = plot_dists(results_df['%s_%s' % (var_key, key)], parcel,
+                            var_name, param_name(key), lims, **pdf_kwargs)
+            fig = axs[0].get_figure()
+            all_plots[var_name, key] = (fig, axs)
+            if args.interact: plt.show()
+
+        # b) log10(Neq)
+        var_key  = "Neq"
+        var_name = r"log10(N$_{eq}$)"
+        lims     = [0, 4]
+        parcel = results_df['%s_parcel' % var_key]
+        print var_name
+        for key in param_keys:
+            print "   ", key
+            axs  = plot_dists(results_df['%s_%s' % (var_key, key)], parcel,
+                            var_name, param_name(key), lims, **pdf_kwargs)
+            fig = axs[0].get_figure()
+            all_plots[var_name, key] = (fig, axs)
+            if args.interact: plt.show()
+
+        # c) Nderiv
+        var_key  = "Nderiv"
+        var_name = r"log10(N$_{d}$)"
+        lims     = [0, 4]
+        parcel = results_df['Neq_parcel']
+        print var_name
+        for key in pce_keys:
+            print "   ", key
+            axs  = plot_dists(results_df['%s_%s' % (var_key, key)], parcel,
+                            var_name, param_name(key), lims, **pdf_kwargs)
+            fig = axs[0].get_figure()
+            all_plots[var_name, key] = (fig, axs)
+            if args.interact: plt.show()
+
+
+
+    ## Clean up
+    #plt.close('all')
+
+
+'''
 ###############################################################
 ## Loop over all the experiments
 run_names = sorted(results_dict.keys())
@@ -318,11 +538,6 @@ diag CDNC eval
                                      "rel_nacts_diff": (pce_nacts - lhs_nacts)/lhs_nacts,
                                      "rel_afs_diff": (pce_afs - lhs_afs)/lhs_afs })
 
-        '''
-        sns.violinplot(bin_df.rel_lhs_diff*100., bin_numbers, #names=bin_names,
-                        color="OrRd",
-                       ax=ax_oo_bin)
-        '''
         Smaxes = z_func(bin_df.ana_lhs)*100.
         rel_errs = bin_df.rel_lhs_diff*100.
         mask = (Smaxes > 0.01) & (Vs > 0.2) & (Vs < 10.0)
@@ -349,11 +564,6 @@ diag CDNC eval
     if PLOT_5:
         plt.rc('text', usetex=False)
 
-        '''
-        sns.violinplot(bin_df.rel_nacts_diff*100., bin_df.bin_numbers, #names=bin_names, 
-                       color="OrRd",
-                       ax=ax_nact_bin)
-        '''
         Smaxes = z_func(bin_df.ana_lhs)*100.
         rel_errs = bin_df.rel_nacts_diff*100.
         mask = (Smaxes > 0.01)  & (Vs > 0.2) & (Vs < 10.0)
@@ -375,11 +585,7 @@ diag CDNC eval
     print "Figure 5 - binned spread - act fracs"
     if PLOT_5:
         plt.rc('text', usetex=False)
-        '''
-        sns.violinplot(bin_df.rel_afs_diff*100., bin_df.bin_numbers, #names=bin_names, 
-                       color="OrRd",
-                       ax=ax_af_bin)
-        '''
+
         Smaxes = z_func(bin_df.ana_lhs)*100.
         rel_errs = bin_df.rel_afs_diff*100.
         mask = (Smaxes > 0.01)  & (Vs > 0.2) & (Vs < 10.0)
@@ -466,3 +672,4 @@ if PLOT_6:
 
     plt.rc('text', usetex=True)
 else: print "...skipping"
+'''
