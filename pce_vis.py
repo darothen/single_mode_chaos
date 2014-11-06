@@ -90,6 +90,14 @@ def plot_one_one_base(param, parcel, var_name, param_name, lims, coloring='k', l
         fig = plt.figure(figsize=(10, 6))
         ax = fig.add_subplot(111)
 
+    ## Mask for infinites
+    mask = np.isfinite(parcel)
+    parcel = parcel[mask]
+    param  = param[mask]
+    if isinstance(coloring, (pd.Series, np.ndarray, list)):
+        coloring = coloring[mask]
+
+
     ax.scatter(parcel, param, marker='.', s=30, c=coloring,
                edgecolor='none', alpha=0.8, cmap=plt.get_cmap("OrRd"), **kwargs)
     oo = np.linspace(lims[0], lims[1], 100)
@@ -138,6 +146,9 @@ stat_label = "RMSE: {rmse:1.2f} ({nrmse:1.2f})\n" + \
 z_func = lambda z: 10.**z
 
 plot_dir = "figs/"
+
+N_lims = 0, 3.5
+S_lims = -3, -1
 
 ###########################################################
 
@@ -188,12 +199,14 @@ if __name__ == "__main__":
     if ALL_PLOTS or "oneone" in args.plots:
         print "One-one plots..."
 
-        oo_kwargs = { 'coloring': design_df['accom'], }
-
+        oo_kwargs = { 
+            #'coloring': 10.**design_df['logV'], 
+        }
+        
         # a) log10(Smax)
         var_key  = "Smax"
         var_name = r"log10(S$_{max}$)"
-        lims     = [-4, -1]
+        lims     = S_lims
         parcel = results_df['%s_parcel' % var_key]
         print var_name
         for key in param_keys:
@@ -207,7 +220,7 @@ if __name__ == "__main__":
         # b) Smax
         var_key  = "Smax"
         var_name = r"S$_{max}$"
-        lims     = [1e-4, 5e-1]
+        lims     = map(lambda x: 10.**x, S_lims)
         parcel = z_func(results_df['%s_parcel' % var_key])
         print var_name
         for key in param_keys:
@@ -221,7 +234,7 @@ if __name__ == "__main__":
         # c) Neq
         var_key  = "Neq"
         var_name = r"log10(N$_{eq}$)"
-        lims     = [1, 4]
+        lims     = N_lims
         parcel = results_df['%s_parcel' % var_key]
         print var_name
         for key in param_keys:
@@ -235,13 +248,27 @@ if __name__ == "__main__":
         # e) Nderiv
         var_key  = "Nderiv"
         var_name = r"log10(N$_{d}$)"
-        lims     = [1, 4]
+        lims     = N_lims
         parcel = results_df['Neq_parcel']
         print var_name
         for key in pce_keys:
             print "   ", key
             ax = plot_one_one(results_df['%s_%s' % (var_key, key)], parcel,
                               var_name, param_name(key), lims, **oo_kwargs)
+            fig = ax.get_figure()
+            all_plots[var_name, key] = (fig, ax)
+            if args.interact: plt.show()
+
+        # c) Nderiv
+        var_key  = "Nderiv"
+        var_name = r"N$_{d}$"
+        lims     = map(lambda x: 10.**x, N_lims)
+        parcel = 10.**(results_df['Neq_parcel'])
+        print var_name
+        for key in pce_keys:
+            print "   ", key
+            ax  = plot_one_one(10.**(results_df['%s_%s' % (var_key, key)]), parcel,
+                               var_name, param_name(key), lims, loglog=True, **oo_kwargs)
             fig = ax.get_figure()
             all_plots[var_name, key] = (fig, ax)
             if args.interact: plt.show()
@@ -257,7 +284,7 @@ if __name__ == "__main__":
         # a) log10(Smax)
         var_key  = "Smax"
         var_name = r"log10(S$_{max}$)"
-        lims     = [-5, 0]
+        lims     = S_lims
         parcel = results_df['%s_parcel' % var_key]
         print var_name
         for key in param_keys:
@@ -271,7 +298,7 @@ if __name__ == "__main__":
         # b) log10(Neq)
         var_key  = "Neq"
         var_name = r"log10(N$_{eq}$)"
-        lims     = [0, 4]
+        lims     = N_lims
         parcel = results_df['%s_parcel' % var_key]
         print var_name
         for key in param_keys:
@@ -282,10 +309,10 @@ if __name__ == "__main__":
             all_plots[var_name, key] = (fig, axs)
             if args.interact: plt.show()
 
-        # c) Nderiv
+        # c) log10(Nderiv)
         var_key  = "Nderiv"
         var_name = r"log10(N$_{d}$)"
-        lims     = [0, 4]
+        lims     = N_lims
         parcel = results_df['Neq_parcel']
         print var_name
         for key in pce_keys:
@@ -295,8 +322,6 @@ if __name__ == "__main__":
             fig = axs[0].get_figure()
             all_plots[var_name, key] = (fig, axs)
             if args.interact: plt.show()
-
-
 
     ## Clean up
     #plt.close('all')

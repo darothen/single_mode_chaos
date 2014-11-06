@@ -68,6 +68,9 @@ if __name__ == "__main__":
         for i, v in enumerate(variables):
             dist, a, b = v[3]
             z_design[i, :] = maps[i](design[i, :], a, b)
+
+        design = design[:, :args.n]
+        z_design = z_design[:, :args.n]
     else:
         design, z_design = design_lhs_exp(variables, maps, offsets, args.n)
         design_df = pd.DataFrame(design.T, columns=[v[0] for v in variables])
@@ -141,10 +144,19 @@ if __name__ == "__main__":
                 ## If this is an Smax response, go ahead and compute 
                 ## a derived Nact (Nderiv)
                 if r == 'Smax':
-                    fn_nderiv = lambda z, smax: fn(*z, fn_toggle=smax)
+                    print "      Computing Nderiv from PCE Smax"
+                    fn_nderiv = lambda z: fn(*z[0], fn_toggle=z_func(z[1]))
                     zipped = zip(design.T, pce_results)
-                    nderiv = np.array([fn_nderiv(z, z_func(smax)) \
-                                      for z, smax in zipped])
+
+                    if args.parallel:
+                        dv['fn_nderiv'] = fn_nderiv
+                        dv['z_func'] = z_func
+                        nderiv = view.map_async(fn_nderiv, zipped, ordered=True)
+                        nderiv.wait_interactive()
+                    else:
+                        nderiv = np.array([fn_nderiv(z) \
+                                          for z in zipped])
+                    nderiv = np.array(nderiv)
                     results_df['Nderiv_%s' % run_name] = nderiv[:, -1]
 
         print "done."
@@ -169,5 +181,7 @@ if __name__ == "__main__":
 
         ## Save final results
         print "Saving to disk at %s" % sample_fn
+        if args.reference:
+            results_df.index = stored_design.index
         results_df.to_csv(sample_fn)
 
