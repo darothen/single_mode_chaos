@@ -1,22 +1,7 @@
 """
 Hand-crafted wrapper of PCM results derived using DAKOTA. 
 
-Version: 9/24/2014
-
-## The set of variables about which to perform the PCE
-## symbol, name, [prior, *parameters], meta(dictionary)
-    ## ~10 - ~10000
-    ['lnN', 'lnN', 1, ['uniform', 2.3, 9.3], 2.3, {}],
-    ['mu', 'mu', 2, ['uniform', 0., 0.8], 0., {}],
-    ['sigma', 'sigma', 3, ['uniform', 1.2, 3.0], 1.2, {}],
-    ['kappa', 'kappa', 4, ['uniform', 0.0, 1.2], 0., {}],
-    ['lnV', 'lnV', 5, ['uniform', -1.61, 2.5], -1.61, {}],
-    ['T', 'T', 6, ['uniform', 240., 300.], 200., {}],
-    ['P', 'P', 7, ['uniform', 50000., 105000.], 50000., {}],
-
-## All modes are uniform
-
-Notes:
+Version: 11/18/2014
 
     1) The `__main__` portion of this script will process the PCE derivation output
        and create a binary file with the coefficient tables. It'll have to be ported
@@ -24,8 +9,8 @@ Notes:
 
     2) Only the listed runs and orders will be saved and made available.
 
-    3) By default, will attempt to read in a saved binary file with the coefficient tables
-       but will fail gracefully if not available.
+    3) Modified to only extract the Smax expansions
+
 """
 
 import h5py
@@ -34,25 +19,26 @@ import os
 import pandas as pd
 import pickle
 
-from parcel_model.activation import activate_lognormal_mode, _unpack_aerosols
+from parcel_model.activation import _unpack_aerosols, lognormal_activation
 
 from scipy.special import orthogonal as op
 
+from numba import jit
+
 DEBUG = False
-BLOCK = False # Block from the 'main' program being run
+BLOCK = True # Block from the 'main' program being run
+TEST  = True
 
 STORE_FN = "pcm_param.h5"
 
 RUNS = {
-    "pcm_ols_parcel": [2, 3, 4, 5],
-    "pcm_lars_parcel": [2, 3, 4, 5],
-    "pcm_lasso_parcel": [2, 3, 4, 5],
+    "SM_OLS": [2, 3, 4, ],
 }
 
 RUNS_SAVE = {}
 
-## Load data into memory
-try:
+if BLOCK:
+    ## Load data into memory
     store = h5py.File(STORE_FN, "r")
     for pcm, levels in RUNS.iteritems():
         save_dict = {}
@@ -66,8 +52,7 @@ try:
             save_dict[level] = {'coeffs':coeffs, 'max_orders':max_orders, 'orders':orders}
         RUNS_SAVE[pcm] = save_dict
     store.close()
-except IOError:
-    print "Could not open coefficient file %s, check to see it is available." % STORE_FN
+
 
 def uni_to_uni(x, ai, bi, af=-1., bf=1.):    
     """ Transform a uniform random variable to one with another set
@@ -86,6 +71,8 @@ def uni_to_uni(x, ai, bi, af=-1., bf=1.):
     -------
     float, random variable in new uniform distribution
     """
+    if x < ai: return 0.
+    if x > bi: return 0.
     return ((bf-af)/(bi-ai))*(x - ai) + af
 
 def project(x):
@@ -104,13 +91,14 @@ def project(x):
     .. note:: see file docstring for more information on the vector space
     """
 
-    bnds = [[2.3, 9.3],
-            [0., 0.8],
+    bnds = [[1.0, 4.0],
+            [-3.0, -1.0],
             [1.2, 3.0],
             [0.0, 1.2],
-            [-1.61, 2.5],
-            [240., 300.], 
-            [50000., 105000.]]
+            [-2.0, 1.0],
+            [240., 310.], 
+            [50000., 105000.],
+            [0.1, 1.0],]
 
     y = []
     for i, (xi, (ai, bi)) in enumerate(zip(x, bnds)):
@@ -119,28 +107,6 @@ def project(x):
 
 @jit("f8(i8[:,:],f8[:],f8[:,:])")
 def poly_eval(orders, coeffs, zin):
-    """
-    Interior, polynomial-evaluation loop of the parameterization.
-
-    Parameters
-    ----------
-    orders : ndarray of integers
-        the nterms x nvars matrix corresponding to the order of each
-        legendre basis comprising each monomial in the polynomial
-    coeffs : ndarray of floats
-        an nterm length vector of the chaos coefficients
-    zin : ndarray of floats 
-        evaluations of each order orthogonal polynomial for the given
-        number of inputs, with shape nvars x max_order, where max_order
-        is the highest order term in the expansion.
-
-    Returns
-    -------
-    evaluation : float
-        evaluation of the polynomial
-
-    """
-
     nterms = orders.shape[0]
     nvars = orders.shape[1]
 
@@ -148,14 +114,16 @@ def poly_eval(orders, coeffs, zin):
     for row in xrange(nterms):
         row_eval = 1.
         for col in xrange(nvars):
+            #print (row+1, col+1, orders[row, col], zin[col, orders[row, col]])
             row_eval *= zin[col, orders[row, col]]
+        #print (row+1, row_eval)
         evaluation += row_eval*coeffs[row]
 
     return evaluation
 
-def param(V, T, P, aerosols=[],
+def param(V, T, P, aerosols=[], accom=0.1,
           mus=[], sigmas=[], Ns=[], kappas=[],
-          pcm=RUNS.keys()[0], level="expansion_order_3"):
+          pcm=RUNS.keys()[0], level="expansion_order_4"):
 
     if aerosols:
         d = _unpack_aerosols(aerosols)
@@ -174,13 +142,13 @@ def param(V, T, P, aerosols=[],
         assert kappas
         kappa = kappas[0]
 
-    lnN = np.log(N)
-    lnV = np.log(V)
+    logN  = np.log10(N)
+    logmu = np.log10(mu)
+    logV  = np.log10(V)
 
     ## Project into orthogonal polynomial space
-    z = project([lnN, mu, sigma, kappa, lnV, T, P])
+    z = project([logN, logmu, sigma, kappa, logV, T, P, accom])
 
-    ## Retrieve the specified chaos expansion polynomial details
     coeffs = RUNS_SAVE[pcm][level]['coeffs'] 
     orders = RUNS_SAVE[pcm][level]['orders'] 
     max_orders = RUNS_SAVE[pcm][level]['max_orders'] 
@@ -194,17 +162,34 @@ def param(V, T, P, aerosols=[],
         poly_evals.append([op.eval_legendre(n, zi) for n in xrange(order+1)])
     poly_evals = np.array(poly_evals)
 
-    ## Step 2) Evaluate the polynomial 
     evaluation = poly_eval(orders, coeffs, poly_evals)
 
-    ## Step 3) This gives us ln(Smax), so now we return Smax
-    Smax = np.exp(evaluation)
+    ## Step 3) This gives us log10(Smax), so now we return Smax
+    Smax = 10.**(evaluation)
 
-    n_act, act_frac = activate_lognormal_mode(Smax, mu*1e-6, sigma, N, kappa, T=T)
+    n_act, act_frac = lognormal_activation(Smax, mu*1e-6, sigma, N, kappa, T=T)
 
     return Smax, n_act, act_frac
 
 if __name__ == "__main__":
+
+    if TEST:
+        import parcel_model as pm
+        V = 0.5
+        T = 293.
+        P = 85000.
+
+        aerosols = [pm.AerosolSpecies('test', pm.Lognorm(mu=0.05, sigma=2.0, N=850.),
+                                      kappa=0.507, bins=200), ]
+
+        for V in np.logspace(-1, 1, 10):
+
+            x = [np.log10(850.), np.log10(0.05), 2.0, 0.507, np.log10(V), T, P]
+            print "V", V
+            print "PCM", param(V, T, P, aerosols, accom=0.1) 
+            print "ARG", pm.arg2000(V, T, P, aerosols, accom=0.1)
+            print "MBN", pm.mbn2014(V, T, P, aerosols, accom=0.1)
+            print "--"*30
 
     if BLOCK:
         print "Locked out"
@@ -227,7 +212,7 @@ if __name__ == "__main__":
             print "   ", level
 
             path_to_output = os.path.join("save", folder)
-            pce = pickle.load(open(os.path.join(path_to_output, "pce.p"), 'r'))
+            pce = pickle.load(open(os.path.join(path_to_output, "pce.p"), 'r'))['Smax']
 
             level_group = run_group.create_group(level)
             coeffs = level_group.create_dataset("coeffs", pce.A.shape, dtype=pce.A.dtype)
