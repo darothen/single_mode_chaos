@@ -71,8 +71,8 @@ def uni_to_uni(x, ai, bi, af=-1., bf=1.):
     -------
     float, random variable in new uniform distribution
     """
-    if x < ai: return 0.
-    if x > bi: return 0.
+    if x < ai: return af
+    if x > bi: return bf
     return ((bf-af)/(bi-ai))*(x - ai) + af
 
 def project(x):
@@ -175,14 +175,15 @@ if __name__ == "__main__":
 
     if TEST:
         import parcel_model as pm
-        V = 0.5
+        V = 0.2
         T = 293.
         P = 85000.
 
-        aerosols = [pm.AerosolSpecies('test', pm.Lognorm(mu=0.05, sigma=2.0, N=850.),
+        aerosols = [pm.AerosolSpecies('test', pm.Lognorm(mu=0.004, sigma=2.0, N=1.),
                                       kappa=0.507, bins=200), ]
 
-        for V in np.logspace(-1, 1, 10):
+        #for V in np.logspace(-1, 1, 10):
+        for V in [0.2]: 
 
             x = [np.log10(850.), np.log10(0.05), 2.0, 0.507, np.log10(V), T, P]
             print "V", V
@@ -210,6 +211,7 @@ if __name__ == "__main__":
 
         for level, folder in results.iteritems():
             print "   ", level
+            level_val = int(level.split("_")[-1])
 
             path_to_output = os.path.join("save", folder)
             pce = pickle.load(open(os.path.join(path_to_output, "pce.p"), 'r'))['Smax']
@@ -225,5 +227,8 @@ if __name__ == "__main__":
             max_orders = level_group.create_dataset("max_orders", pce.max_orders.shape, 
                                                     dtype=pce.max_orders.dtype)
             max_orders[:] = np.max(pce.orders, axis=0)
+
+            stacked = np.hstack([coeffs[:][:, np.newaxis], orders[:]])
+            np.savetxt("%s_%d.ascii" % (run, level_val), stacked)
 
     store.close()
