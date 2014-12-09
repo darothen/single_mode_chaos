@@ -46,7 +46,7 @@ def compute_stats(obs, act):
 
     return stats
 
-def plot_dists_base(param, parcel, var_name, param_name, lims, exp_name = '', savefig=False, **kwargs):
+def plot_dists_base(param, parcel, var_name, param_name, lims, exp_name = '', ref_name='', savefig=False, **kwargs):
     pct_levs = np.linspace(0., 100., 11)
 
     fig, axs = plt.subplots(1, 2, figsize=(10, 4))
@@ -81,11 +81,12 @@ def plot_dists_base(param, parcel, var_name, param_name, lims, exp_name = '', sa
     ax_pdf.legend(loc="best")
 
     if savefig:
-        plt.savefig(os.path.join(plot_dir, "%s_%s_%s_cdfs.pdf" % (exp_name, var_name, param_name)))
+        var_fn = fn_out_fix(var_name)
+        plt.savefig(os.path.join(plot_dir, "%s_%s_%s_%s_cdfs.pdf" % (ref_name, exp_name, var_fn, param_name)))
 
     return ax_cdf, ax_pdf
 
-def plot_one_one_base(param, parcel, var_name, param_name, lims, coloring='k', loglog=False, ax=None, error_pct=0.5, exp_name='', savefig=False, **kwargs):
+def plot_one_one_base(param, parcel, var_name, param_name, lims, coloring='k', loglog=False, ax=None, error_pct=0.5, exp_name='', ref_name='', savefig=False, **kwargs):
     if not ax:
         fig = plt.figure(figsize=(10, 6))
         ax = fig.add_subplot(111)
@@ -118,7 +119,8 @@ def plot_one_one_base(param, parcel, var_name, param_name, lims, coloring='k', l
             transform=ax.transAxes, fontsize=12)
 
     if savefig:
-        plt.savefig(os.path.join(plot_dir, "%s_%s_%s_oneone.pdf" % (exp_name, var_name, param_name)))
+        var_fn = fn_out_fix(var_name)
+        plt.savefig(os.path.join(plot_dir, "%s_%s_%s_%s_oneone.pdf" % (ref_name, exp_name, var_fn, param_name)))
 
     return ax
 
@@ -128,6 +130,11 @@ def plot_one_one_base(param, parcel, var_name, param_name, lims, coloring='k', l
 sns.set(style="darkgrid", context="talk", palette="Dark2")
 plt.rc('text', usetex=True)
 plt.rc('font', family='serif')
+
+def fn_out_fix(s, chars="_${}"):
+    for char in chars:
+        s = s.replace(char, "")
+    return s
 
 fn_fix = lambda s: s.replace("_", "\_")
 def param_name(s):
@@ -147,8 +154,8 @@ z_func = lambda z: 10.**z
 
 plot_dir = "figs/"
 
-N_lims = 0, 3.5
-S_lims = -3, -1
+N_lims = 1, 5
+S_lims = -5, -1
 
 ###########################################################
 
@@ -175,9 +182,11 @@ if __name__ == "__main__":
 
     ## Over-write plotting functions with exp_name
     def plot_one_one(*v, **kw):
-        return plot_one_one_base(*v, exp_name=args.exp_name, savefig=(not args.interact), **kw)
+        return plot_one_one_base(*v, exp_name=args.exp_name, ref_name=args.reference,
+                                 savefig=(not args.interact), **kw)
     def plot_dists(*v, **kw):
-        return plot_dists_base(*v, exp_name=args.exp_name, savefig=(not args.interact),**kw)
+        return plot_dists_base(*v, exp_name=args.exp_name, ref_name=args.reference,
+                               savefig=(not args.interact),**kw)
 
     ## Unload the configured experiment
     exp_dict = pickle.load(open("%s_exp.dict" % args.exp_name, 'r'))
