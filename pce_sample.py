@@ -174,9 +174,9 @@ if __name__ == "__main__":
             param_results = np.array(param_results[:])
 
             results_df["Smax_ARG"] = param_results[:, 0]
-            results_df["Neq_ARG"] = param_results[:, 1]
+            results_df["Nderiv_ARG"] = param_results[:, 1]
             results_df["Smax_MBN"] = param_results[:, 2]
-            results_df["Neq_MBN"] = param_results[:, 3]
+            results_df["Nderiv_MBN"] = param_results[:, 3]
             print "done."
 
         ## Save final results

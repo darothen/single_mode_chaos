@@ -20,24 +20,6 @@ def design_lhs_exp(variables, maps, offsets=None, samples=int(1e4)):
     for i, v in enumerate(variables):
         dist, a, b = v[3]
 
-        if v[0].startswith("ln"):
-            ## 9/4/2014
-            ## This is an experimental correction to re-project the
-            ## logarithmic variables into their normal coordinate 
-            ## system. It should only effect the sampling, and hopefully
-            ## improve it by forcing it to even things out over the 
-            ## actually range we care about
-            a = np.exp(a)
-            b = np.exp(b)
-            offsets[i] = np.exp(offsets[i])
-
-        elif v[0].startswith("log"):
-            ## 10/26/2014
-            ## In accordance with above, but for log10 vars
-            a = 10.**a
-            b = 10.**b
-            offsets[i] = 10.**offsets[i]
-
         if offsets:
             ## These corrections with "offsets" re-center the interval
             ## so that the left endpoint is 0. I found that if arbitrary
@@ -57,18 +39,6 @@ def design_lhs_exp(variables, maps, offsets=None, samples=int(1e4)):
             ## Project back in to the correct limits
             design[:, i] += offsets[i]
             a, b = a+offsets[i], b+offsets[i]
-
-        if v[0].startswith("ln"):
-            ## 9/4/2014
-            ## Second half of correction
-            a = np.log(a)
-            b = np.log(b)
-            design[:, i] = np.log(design[:, i])
-        elif v[0].startswith("log"):
-            ## 10/26/2014
-            a = np.log10(a)
-            b = np.log10(b)
-            design[:, i] = np.log10(design[:, i])
 
         z_design[:, i] = maps[i](design[:, i], a, b)
     design = design.T # in x-coords
