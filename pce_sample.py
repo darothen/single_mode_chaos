@@ -14,6 +14,8 @@ parser.add_argument("-r", "--reference", type=str,
                     help="Reference set of design points to use")
 parser.add_argument("--params", action='store_true', 
                     help="Include sampling of ARG/MBN parameterizations")
+parser.add_argument("--parcel", action='store_true', 
+                    help="Include sampling of numerical parcel model.")
 parser.add_argument("--n", "-n", type=int, default=10000,
                     help="Number of samples to perform; either total for LHS or " + \
                          "limit for CESM")
@@ -71,6 +73,8 @@ if __name__ == "__main__":
 
         design = design[:, :args.n]
         z_design = z_design[:, :args.n]
+        design_df = stored_design
+
     else:
         design, z_design = design_lhs_exp(variables, maps, offsets, args.n)
         design_df = pd.DataFrame(design.T, columns=[v[0] for v in variables])
@@ -91,29 +95,36 @@ if __name__ == "__main__":
         print "Writing results to", sample_fn
 
         fn = model_run.__dict__[exp_dict['function_name']]
+        results_df = pd.DataFrame(index=design_df.index)
+
+        ## Set up some parallel processing arguments if they're going
+        ## to be used
+        if args.parallel: 
+            view = client.load_balanced_view()
 
         ## Analytical model
-        print "Detailed model..."
-        if args.parallel:
-            dv['z_func'] = z_func
-            dv['fn'] = fn
-            fn_par = lambda z : fn(*z)
-            dv['fn_par'] = fn_par
+        if args.parcel:
+            print "Detailed model..."
+            if args.parallel:
+                dv['z_func'] = z_func
+                dv['fn'] = fn
+                fn_par = lambda z : fn(*z)
+                dv['fn_par'] = fn_par
 
             cwd = os.getcwd()
             dv.execute("import sys; sys.path.append('%s'); import model_run" % cwd)
 
-            view = client.load_balanced_view()
             results = view.map_async(fn_par, design.T, ordered=True)
             results.wait_interactive()
         else:
             results = [fn(*z) for z in design.T]
         results = np.array(results[:])
 
-        results_df = pd.DataFrame(results, columns=["Smax_parcel", 
-                                                    "Neq_parcel",
-                                                    "Nkn_parcel"])
-        print "done."
+            results_df['Smax_parcel'] = results[:, 0]
+            results_df['Neq_parcel'] = results[:, 1]
+            results_df['Nkn_parcel'] = results[:, 2]
+
+            print "done."
 
         ## Chaos expansions
         # Load into memory
