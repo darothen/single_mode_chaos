@@ -214,8 +214,8 @@ if __name__ == "__main__":
         
         # a) log10(Smax)
         var_key  = "Smax"
-        var_name = r"log10(S$_{max}$)"
-        lims     = S_lims
+        var_name = r"log10(S_max)"
+        lims     = [-4, -1]
         parcel = results_df['%s_parcel' % var_key]
         print var_name
         for key in param_keys:
@@ -228,8 +228,8 @@ if __name__ == "__main__":
 
         # b) Smax
         var_key  = "Smax"
-        var_name = r"S$_{max}$"
-        lims     = map(lambda x: 10.**x, S_lims)
+        var_name = r"S_max"
+        lims     = [1e-4, 5e-1]
         parcel = z_func(results_df['%s_parcel' % var_key])
         print var_name
         for key in param_keys:
@@ -242,8 +242,8 @@ if __name__ == "__main__":
 
         # c) Neq
         var_key  = "Neq"
-        var_name = r"log10(N$_{eq}$)"
-        lims     = N_lims
+        var_name = r"log10(N_eq)"
+        lims     = [1, 4]
         parcel = results_df['%s_parcel' % var_key]
         print var_name
         for key in param_keys:
@@ -256,8 +256,8 @@ if __name__ == "__main__":
 
         # e) Nderiv
         var_key  = "Nderiv"
-        var_name = r"log10(N$_{d}$)"
-        lims     = N_lims
+        var_name = r"log10(N_d)"
+        lims     = [1, 4]
         parcel = results_df['Neq_parcel']
         print var_name
         for key in pce_keys:
@@ -292,8 +292,8 @@ if __name__ == "__main__":
 
         # a) log10(Smax)
         var_key  = "Smax"
-        var_name = r"log10(S$_{max}$)"
-        lims     = S_lims
+        var_name = r"log10(S_max)"
+        lims     = [-5, 0]
         parcel = results_df['%s_parcel' % var_key]
         print var_name
         for key in param_keys:
@@ -306,8 +306,8 @@ if __name__ == "__main__":
 
         # b) log10(Neq)
         var_key  = "Neq"
-        var_name = r"log10(N$_{eq}$)"
-        lims     = N_lims
+        var_name = r"log10(N_eq)"
+        lims     = [0, 4]
         parcel = results_df['%s_parcel' % var_key]
         print var_name
         for key in param_keys:
@@ -320,8 +320,8 @@ if __name__ == "__main__":
 
         # c) log10(Nderiv)
         var_key  = "Nderiv"
-        var_name = r"log10(N$_{d}$)"
-        lims     = N_lims
+        var_name = r"log10(N_d)"
+        lims     = [0, 4]
         parcel = results_df['Neq_parcel']
         print var_name
         for key in pce_keys:
