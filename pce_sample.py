@@ -14,6 +14,8 @@ parser.add_argument("-r", "--reference", type=str,
                     help="Reference set of design points to use")
 parser.add_argument("--params", action='store_true', 
                     help="Include sampling of ARG/MBN parameterizations")
+parser.add_argument("--parcel", action='store_true', 
+                    help="Include sampling of numerical parcel model.")
 parser.add_argument("--n", "-n", type=int, default=10000,
                     help="Number of samples to perform; either total for LHS or " + \
                          "limit for CESM")
@@ -21,6 +23,8 @@ parser.add_argument("--parallel", action='store_true',
                     help="Perform evaluations in parallel")
 parser.add_argument("--recompute", action='store_true', 
                     help="Force recompute/overwrite of existing results")
+parser.add_argument("--project", action='store_true',
+                    help="Re-project logarithmic variables to linear space for sampling")
 
 z_func = lambda z: 10.**z
 
@@ -61,15 +65,21 @@ if __name__ == "__main__":
 
     ## Was there a reference design set? If so, use that 
     if args.reference:
-        ref_design_name = args.references
+        ref_design_name = args.reference
         stored_design = pd.read_csv(args.reference)
         design = stored_design[[v[0] for v in variables]].values.T
         z_design = np.empty_like(design)
         for i, v in enumerate(variables):
             dist, a, b = v[3]
             z_design[i, :] = maps[i](design[i, :], a, b)
+
+        design = design[:, :args.n]
+        z_design = z_design[:, :args.n]
+        design_df = stored_design
+
     else:
-        design, z_design = design_lhs_exp(variables, maps, offsets, args.n)
+        design, z_design = design_lhs_exp(variables, maps, offsets, args.n,
+                                          project_linear=args.project)
         design_df = pd.DataFrame(design.T, columns=[v[0] for v in variables])
         ref_design_name = "%s_LHS_design.csv" % args.exp_name
         design_df.to_csv(ref_design_name)
@@ -88,29 +98,39 @@ if __name__ == "__main__":
         print "Writing results to", sample_fn
 
         fn = model_run.__dict__[exp_dict['function_name']]
+        results_df = pd.DataFrame(index=design_df.index)
+
+        ## Set up some parallel processing arguments if they're going
+        ## to be used
+        if args.parallel: 
+            view = client.load_balanced_view()
 
         ## Analytical model
-        print "Detailed model..."
-        if args.parallel:
-            dv['z_func'] = z_func
-            dv['fn'] = fn
-            fn_par = lambda z : fn(*z)
-            dv['fn_par'] = fn_par
+        if args.parcel:
+            print "Detailed model..."
+            if args.parallel:
+                dv['z_func'] = z_func
+                dv['fn'] = fn
+                fn_par = lambda z : fn(*z)
+                dv['fn_par'] = fn_par
 
-            cwd = os.getcwd()
-            dv.execute("import sys; sys.path.append('%s'); import model_run" % cwd)
+                cwd = os.getcwd()
+                dv.execute("import sys; sys.path.append('%s'); import model_run" % cwd)
 
-            view = client.load_balanced_view()
-            results = view.map_async(fn_par, design.T, ordered=True)
-            results.wait_interactive()
-        else:
-            results = [fn(*z) for z in design.T]
-        results = np.array(results[:])
+                results = view.map_async(fn_par, design.T, ordered=True)
+                results.wait_interactive()
+            else:
+                results = [fn(*z) for z in design.T]
+            results = np.array(results[:])
 
-        results_df = pd.DataFrame(results, columns=["Smax_parcel", 
-                                                    "Neq_parcel",
-                                                    "Nkn_parcel"])
-        print "done."
+            #results_df = pd.DataFrame(results, columns=["Smax_parcel", 
+            #                                            "Neq_parcel",
+            #                                            "Nkn_parcel"])
+            results_df['Smax_parcel'] = results[:, 0]
+            results_df['Neq_parcel'] = results[:, 1]
+            results_df['Nkn_parcel'] = results[:, 2]
+
+            print "done."
 
         ## Chaos expansions
         # Load into memory
@@ -141,10 +161,19 @@ if __name__ == "__main__":
                 ## If this is an Smax response, go ahead and compute 
                 ## a derived Nact (Nderiv)
                 if r == 'Smax':
-                    fn_nderiv = lambda z, smax: fn(*z, fn_toggle=smax)
+                    print "      Computing Nderiv from PCE Smax"
+                    fn_nderiv = lambda z: fn(*z[0], fn_toggle=z_func(z[1]))
                     zipped = zip(design.T, pce_results)
-                    nderiv = np.array([fn_nderiv(z, z_func(smax)) \
-                                      for z, smax in zipped])
+
+                    if args.parallel:
+                        dv['fn_nderiv'] = fn_nderiv
+                        dv['z_func'] = z_func
+                        nderiv = view.map_async(fn_nderiv, zipped, ordered=True)
+                        nderiv.wait_interactive()
+                    else:
+                        nderiv = np.array([fn_nderiv(z) \
+                                          for z in zipped])
+                    nderiv = np.array(nderiv)
                     results_df['Nderiv_%s' % run_name] = nderiv[:, -1]
 
         print "done."
@@ -162,12 +191,14 @@ if __name__ == "__main__":
             param_results = np.array(param_results[:])
 
             results_df["Smax_ARG"] = param_results[:, 0]
-            results_df["Neq_ARG"] = param_results[:, 1]
+            results_df["Nderiv_ARG"] = param_results[:, 1]
             results_df["Smax_MBN"] = param_results[:, 2]
-            results_df["Neq_MBN"] = param_results[:, 3]
+            results_df["Nderiv_MBN"] = param_results[:, 3]
             print "done."
 
         ## Save final results
         print "Saving to disk at %s" % sample_fn
+        if args.reference:
+            results_df.index = stored_design.index
         results_df.to_csv(sample_fn)
 
