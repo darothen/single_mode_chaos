@@ -3,7 +3,7 @@ module param
 
     implicit none
     integer, parameter :: dp = kind(1.d0)
-    character(*), parameter :: pcm_table = "SM_OLS_2.ascii"
+    character(*), parameter :: pcm_table = "SM_OLS_4.ascii"
 
     ! SET THESE PARAMETERS
     logical            :: LOG_SMAX = .true.
