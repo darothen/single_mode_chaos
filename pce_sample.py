@@ -23,6 +23,8 @@ parser.add_argument("--parallel", action='store_true',
                     help="Perform evaluations in parallel")
 parser.add_argument("--recompute", action='store_true', 
                     help="Force recompute/overwrite of existing results")
+parser.add_argument("--project", action='store_true',
+                    help="Re-project logarithmic variables to linear space for sampling")
 
 z_func = lambda z: 10.**z
 
@@ -76,7 +78,8 @@ if __name__ == "__main__":
         design_df = stored_design
 
     else:
-        design, z_design = design_lhs_exp(variables, maps, offsets, args.n)
+        design, z_design = design_lhs_exp(variables, maps, offsets, args.n,
+                                          project_linear=args.project)
         design_df = pd.DataFrame(design.T, columns=[v[0] for v in variables])
         ref_design_name = "%s_LHS_design.csv" % args.exp_name
         design_df.to_csv(ref_design_name)
@@ -111,15 +114,18 @@ if __name__ == "__main__":
                 fn_par = lambda z : fn(*z)
                 dv['fn_par'] = fn_par
 
-            cwd = os.getcwd()
-            dv.execute("import sys; sys.path.append('%s'); import model_run" % cwd)
+                cwd = os.getcwd()
+                dv.execute("import sys; sys.path.append('%s'); import model_run" % cwd)
 
-            results = view.map_async(fn_par, design.T, ordered=True)
-            results.wait_interactive()
-        else:
-            results = [fn(*z) for z in design.T]
-        results = np.array(results[:])
+                results = view.map_async(fn_par, design.T, ordered=True)
+                results.wait_interactive()
+            else:
+                results = [fn(*z) for z in design.T]
+            results = np.array(results[:])
 
+            #results_df = pd.DataFrame(results, columns=["Smax_parcel", 
+            #                                            "Neq_parcel",
+            #                                            "Nkn_parcel"])
             results_df['Smax_parcel'] = results[:, 0]
             results_df['Neq_parcel'] = results[:, 1]
             results_df['Nkn_parcel'] = results[:, 2]

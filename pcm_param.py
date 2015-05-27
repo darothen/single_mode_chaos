@@ -1,22 +1,23 @@
 """
 Hand-crafted wrapper of PCM results derived using DAKOTA. 
 
-Version: 11/18/2014
+Version: 4/27/2015
 
     1) The `__main__` portion of this script will process the PCE derivation output
        and create a binary file with the coefficient tables. It'll have to be ported
        with the parameterization script.
 
     2) Only the listed runs and orders will be saved and made available.
-
-    3) Modified to only extract the Smax expansions
+    
+    TODO:
+    - Modify to separately extract Nkn, Neq, and Smax
 
 """
 
+import argparse
 import h5py
 import numpy as np
 import os
-import pandas as pd
 import pickle
 
 from parcel_model.activation import _unpack_aerosols, lognormal_activation
@@ -26,20 +27,31 @@ from scipy.special import orthogonal as op
 from numba import jit
 
 DEBUG = False
-BLOCK = True # Block from the 'main' program being run
-TEST  = True
+BLOCK = False # Block from the 'main' program being run
+TEST  = False
+
+parser = argparse.ArgumentParser(
+    description="Module for quickly evaluating derived chaos expansions"
+)
+parser.add_argument("--DEBUG", action='store_true', 
+                    help="Enable debug output during setup")
+parser.add_argument("--BLOCK", action='store_true',
+                    help="Prevent chaos expansions from being re-derived")
+parser.add_argument("--TEST", action='store_true',
+                    help="Run quick test calculation")
 
 STORE_FN = "pcm_param.h5"
 
 RUNS = {
-    "SM_OLS": [2, 3, 4, ],
+    "SM_OLS": [2, 3, 4, 5],
+    "SM_LARS": [2, 3, 4, 5],
+    "SM_LASSO": [2, 3, 4, 5],
 }
 
 RUNS_SAVE = {}
 
-if BLOCK:
-    ## Load data into memory
-    store = h5py.File(STORE_FN, "r")
+try: 
+    store = h5py.File(STORE_FN, "r")    ## Load data into memory
     for pcm, levels in RUNS.iteritems():
         save_dict = {}
         for level in levels:
@@ -52,7 +64,8 @@ if BLOCK:
             save_dict[level] = {'coeffs':coeffs, 'max_orders':max_orders, 'orders':orders}
         RUNS_SAVE[pcm] = save_dict
     store.close()
-
+except IOError:
+    print "WARNING: Could not open %s" % STORE_FN
 
 def uni_to_uni(x, ai, bi, af=-1., bf=1.):    
     """ Transform a uniform random variable to one with another set
@@ -82,7 +95,7 @@ def project(x):
 
     Parameters
     ----------
-    x : [lnN, mu, sigma, kappa, lnV, T, P]
+    x : [logN, logmu, sigma, kappa, logV, T, P, accom]
 
     Returns
     -------
@@ -91,14 +104,16 @@ def project(x):
     .. note:: see file docstring for more information on the vector space
     """
 
-    bnds = [[1.0, 4.0],
-            [-3.0, -1.0],
-            [1.2, 3.0],
-            [0.0, 1.2],
-            [-2.0, 1.0],
-            [240., 310.], 
-            [50000., 105000.],
-            [0.1, 1.0],]
+    bnds = [
+        [1.0, 4.0],        # logN
+        [-3.0, -1.0],      # logmu
+        [1.2, 3.0],        # sigma
+        [0.0, 1.2],        # kappa
+        [-2.0, 1.0],       # logV
+        [240., 310.],      # T
+        [50000., 105000.], # P
+        [0.1, 1.0],        # accom
+    ]
 
     y = []
     for i, (xi, (ai, bi)) in enumerate(zip(x, bnds)):
@@ -123,7 +138,7 @@ def poly_eval(orders, coeffs, zin):
 
 def param(V, T, P, aerosols=[], accom=0.1,
           mus=[], sigmas=[], Ns=[], kappas=[],
-          pcm=RUNS.keys()[0], level="expansion_order_4"):
+          pcm=RUNS.keys()[0], level="expansion_order_4", pcm_N=False):
 
     if aerosols:
         d = _unpack_aerosols(aerosols)
@@ -153,8 +168,8 @@ def param(V, T, P, aerosols=[], accom=0.1,
     orders = RUNS_SAVE[pcm][level]['orders'] 
     max_orders = RUNS_SAVE[pcm][level]['max_orders'] 
 
-    nterms = len(coeffs)
-    nvars = len(z)
+    #nterms = len(coeffs)
+    #nvars = len(z)
 
     ## Step 1) Evaluate the necessary polynomial orders
     poly_evals = []
@@ -173,26 +188,29 @@ def param(V, T, P, aerosols=[], accom=0.1,
 
 if __name__ == "__main__":
 
-    if TEST:
+    args = parser.parse_args()
+
+    if args.TEST:
         import parcel_model as pm
-        V = 0.2
+        #V = 0.2
         T = 293.
         P = 85000.
 
-        aerosols = [pm.AerosolSpecies('test', pm.Lognorm(mu=0.004, sigma=2.0, N=1.),
+        aerosols = [pm.AerosolSpecies('test', 
+                                      pm.Lognorm(mu=0.05, sigma=2.0, N=850.),
                                       kappa=0.507, bins=200), ]
 
         #for V in np.logspace(-1, 1, 10):
-        for V in [0.2]: 
+        for V in [1.0, ]: 
 
-            x = [np.log10(850.), np.log10(0.05), 2.0, 0.507, np.log10(V), T, P]
+            x = [np.log10(850.), np.log10(0.05), 2.0, 0.507, np.log10(V), T, P, 0.1]
             print "V", V
-            print "PCM", param(V, T, P, aerosols, accom=0.1) 
-            print "ARG", pm.arg2000(V, T, P, aerosols, accom=0.1)
-            print "MBN", pm.mbn2014(V, T, P, aerosols, accom=0.1)
+            print "PCM", param(V, T, P, aerosols, accom=1.0) 
+            print "ARG", pm.arg2000(V, T, P, aerosols, accom=1.0)
+            print "MBN", pm.mbn2014(V, T, P, aerosols, accom=1.0)
             print "--"*30
 
-    if BLOCK:
+    if args.BLOCK:
         print "Locked out"
         import sys; sys.exit()
 
@@ -215,6 +233,9 @@ if __name__ == "__main__":
 
             path_to_output = os.path.join("save", folder)
             pce = pickle.load(open(os.path.join(path_to_output, "pce.p"), 'r'))['Smax']
+            ## TODO: `pce` picks from a dictionary which has keys for the chaos expansions 
+            ##       derived each for Smax, Neq, Nkn; should add additional levels and output
+            ##       to save the Neq and Nkn expansions
 
             level_group = run_group.create_group(level)
             coeffs = level_group.create_dataset("coeffs", pce.A.shape, dtype=pce.A.dtype)
