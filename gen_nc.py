@@ -13,6 +13,8 @@ import pickle
 import time
 import subprocess
 
+CHAR_ARRAY_LEN = 16
+
 parser = argparse.ArgumentParser(
     description="Utility script to save chaos expansion output in netCDF form"
 )
@@ -21,6 +23,11 @@ parser.add_argument("order", type=int, help="order of expansion from PCM experim
 
 def get_git_versioning():
     return subprocess.check_output(['git', 'rev-parse', '--short', 'HEAD'])
+
+def padded_string_to_arr(s, n=CHAR_ARRAY_LEN):
+    """ Left-justify and pad a string with spaces up to total width
+    n, and convert to a character array for writing to a NETCDF3 file """
+    return nc.stringtoarr(s.ljust(n), n)
 
 if __name__ == "__main__":
 
@@ -45,9 +52,9 @@ if __name__ == "__main__":
         names.append(name)
         bounds.append([low, hi])
         logs.append(name.startswith("log"))
-    names = np.array(names, dtype=str)
+    names = np.array(names, dtype='S%d' % CHAR_ARRAY_LEN)
     bounds = np.array(bounds, dtype=float)
-    logs = np.array(logs, dtype=bool)
+    logs = np.array(logs, dtype=int)
 
     ## Get the vector of PCE coefficients and the order matrix
     store = h5py.File("pcm_param.h5", "r")
@@ -58,37 +65,43 @@ if __name__ == "__main__":
     nterms, nvars = orders.shape
 
     ## Using a structured DataArray, save this information into a netCDF file
-    with nc.Dataset(args.exp_name + "_%d.nc" % args.order, 'w', format='NETCDF4') as root:
+    with nc.Dataset(args.exp_name + "_%d.nc" % args.order, 'w', format='NETCDF3_CLASSIC') as root:
         print "   writing to file...",
 
         ## Create and populate the variables
         variable = root.createDimension('variable', nvars)
         term = root.createDimension('term', nterms)
+        chars = root.createDimension('char', CHAR_ARRAY_LEN)
 
         ## Add and populate the fields of the netCDF file
-        varnames = root.createVariable('varname', names.dtype, ('variable',))
+        names = np.array([padded_string_to_arr(name) for name in names],
+                         dtype='S1')
+        varnames = root.createVariable('varname', names.dtype, ('variable', 'char'))
         varnames[:] = names
         varnames.description = "name of variable used in expansion"
 
         lower_bnds = root.createVariable('lower_bnd', bounds.dtype, ('variable', ))
-        lower_bnds[:] = bounds[:, 0]   
+        lower_bnds[:] = bounds[:, 0] 
         lower_bnds.description = "lower bound of variable uniform dist"     
 
         upper_bnds = root.createVariable('upper_bnd', bounds.dtype, ('variable', ))
         upper_bnds[:] = bounds[:, 1]
         upper_bnds.description = "upper bound of variable uniform dist"  
 
-        log_vars = root.createVariable('log', 'i1', ('variable', )) # promote to NC_BYTE
+        log_vars = root.createVariable('log', 'i4', ('variable', )) # promote to NC_BYTE
         log_vars[:] = logs
         log_vars.description = "log10(variable) used in expansion"
 
-        orders_var = root.createVariable('order', orders.dtype, ('term', 'variable'))
-        orders_var[:] = orders
+        # Note that we provide the rows / columns *backwards* from what the 
+        # MARC code (pcm_orders) defines. Some weird idiosyncrasy with fortran
+        # and netcdf, probably.
+        orders_var = root.createVariable('order', 'i4', ('variable', 'term'))
+        orders_var[:] = orders.T
         orders_var.description = "chaos term/variable expansion order"
 
         coeffs_var = root.createVariable('coeff', coeffs.dtype, ('term', ))
         coeffs_var[:] = coeffs
-        coeffs_var.descripption = "chaos term coefficient"
+        coeffs_var.description = "chaos term coefficient"
 
         ## Assign some global attributes
         git_commit = get_git_versioning().rstrip()
@@ -96,5 +109,16 @@ if __name__ == "__main__":
         root.history = "Created " + time.ctime(time.time())
         root.description = \
             "Concise order %1d chaos expansion output for experiment %s" % (args.order, args.exp_name)
+        root.exp_name = args.exp_name
+        root.order = args.order
+        root.char_len = CHAR_ARRAY_LEN
+
+        name_var = root.createVariable('exp_name', 'S%d' % 1, ('char', ))
+        name_var[:] = padded_string_to_arr(args.exp_name)
+        name_var.description = "expansion name"
+
+        order_var = root.createVariable('exp_order', 'i4', ())
+        order_var[0] = args.order
+        order_var.description = 'expansion order'
 
         print "done."
