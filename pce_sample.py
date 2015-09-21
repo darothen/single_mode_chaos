@@ -1,7 +1,6 @@
 import os, pickle
 import numpy as np
 import pandas as pd
-from functools import partial
 
 import model_run
 from dist_tools import design_lhs_exp, map_transfer_fcns
@@ -10,18 +9,18 @@ import argparse
 
 parser = argparse.ArgumentParser(description="Conduct sampling study of parcel model and chaos expansion metamodels.")
 parser.add_argument("exp_name", type=str, help="name of PCM experiment to reference")
-parser.add_argument("-r", "--reference", type=str,  
+parser.add_argument("-r", "--reference", type=str,
                     help="Reference set of design points to use")
-parser.add_argument("--params", action='store_true', 
+parser.add_argument("--params", action='store_true',
                     help="Include sampling of ARG/MBN parameterizations")
-parser.add_argument("--parcel", action='store_true', 
+parser.add_argument("--parcel", action='store_true',
                     help="Include sampling of numerical parcel model.")
 parser.add_argument("--n", "-n", type=int, default=10000,
                     help="Number of samples to perform; either total for LHS or " + \
                          "limit for CESM")
-parser.add_argument("--parallel", action='store_true', 
+parser.add_argument("--parallel", action='store_true',
                     help="Perform evaluations in parallel")
-parser.add_argument("--recompute", action='store_true', 
+parser.add_argument("--recompute", action='store_true',
                     help="Force recompute/overwrite of existing results")
 parser.add_argument("--project", action='store_true',
                     help="Re-project logarithmic variables to linear space for sampling")
@@ -43,14 +42,14 @@ if __name__ == "__main__":
     if args.parallel:
         print "running in parallel"
         from IPython.parallel import Client
-        client = Client(profile='ssh')
+        client = Client(profile='legion')
         dv = client[:]
 
     print "\n"
 
     ###########################################################
 
-    ## Load in the experiment dictionary, which contains information on 
+    ## Load in the experiment dictionary, which contains information on
     ## the parameter space structure and contents
     exp_dict = pickle.load(open("%s_exp.dict" % args.exp_name, 'r'))
 
@@ -63,7 +62,7 @@ if __name__ == "__main__":
     ## z-space mapping functions
     maps = map_transfer_fcns(dists, directive_base, True)
 
-    ## Was there a reference design set? If so, use that 
+    ## Was there a reference design set? If so, use that
     if args.reference:
         ref_design_name = args.reference
         stored_design = pd.read_csv(args.reference)
@@ -102,28 +101,44 @@ if __name__ == "__main__":
 
         ## Set up some parallel processing arguments if they're going
         ## to be used
-        if args.parallel: 
+        if args.parallel:
+
+            ## Set import path on remote engines
+            LOCAL_PATH = os.getcwd()
+            REMOTE_PATH = "/net/legion" + LOCAL_PATH
+
+            pth = sys.path
+            sys.path.append(LOCAL_PATH)
+            sys.path.append(REMOTE_PATH)
+
+            with dv.sync_imports():
+                import sys
+            dv['sys.path'] = pth
+
+            ## Send vital functions to remote engines
+            dv['fn'] = fn
+            fn_par = lambda z : fn(*z)
+            dv['fn_par'] = fn_par
+            dv['exp_dict'] = exp_dict
+            dv['z_func'] = z_func
+
+            # Generate load-balancing view
             view = client.load_balanced_view()
 
         ## Analytical model
         if args.parcel:
             print "Detailed model..."
             if args.parallel:
-                dv['z_func'] = z_func
-                dv['fn'] = fn
-                fn_par = lambda z : fn(*z)
-                dv['fn_par'] = fn_par
-
-                cwd = os.getcwd()
-                dv.execute("import sys; sys.path.append('%s'); import model_run" % cwd)
-
                 results = view.map_async(fn_par, design.T, ordered=True)
                 results.wait_interactive()
             else:
-                results = [fn(*z) for z in design.T]
+                results = []
+                for i, z in enumerate(design.T):
+                    result = fn(*z)
+                    results.append(result)
             results = np.array(results[:])
 
-            #results_df = pd.DataFrame(results, columns=["Smax_parcel", 
+            #results_df = pd.DataFrame(results, columns=["Smax_parcel",
             #                                            "Neq_parcel",
             #                                            "Nkn_parcel"])
             results_df['Smax_parcel'] = results[:, 0]
@@ -136,7 +151,7 @@ if __name__ == "__main__":
         # Load into memory
         results_dict = pickle.load(open("%s_results.dict" % args.exp_name, 'r'))
         n_runs = len(results_dict.keys())
-        for run_name, folder in results_dict.iteritems():        
+        for run_name, folder in results_dict.iteritems():
             all_pces = pickle.load(open(os.path.join("save", folder, "pce.p"), 'rb'))
             results_dict[run_name] = { "%s" % r: all_pces[r] for r in responses }
 
@@ -158,7 +173,7 @@ if __name__ == "__main__":
                 pce_results = np.array(pce_results)
                 results_df['%s_%s' % (r, run_name)] = pce_results
 
-                ## If this is an Smax response, go ahead and compute 
+                ## If this is an Smax response, go ahead and compute
                 ## a derived Nact (Nderiv)
                 if r == 'Smax':
                     print "      Computing Nderiv from PCE Smax"
