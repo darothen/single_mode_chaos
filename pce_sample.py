@@ -1,4 +1,4 @@
-import os, pickle
+import os, pickle, sys
 import numpy as np
 import pandas as pd
 
@@ -41,7 +41,7 @@ if __name__ == "__main__":
         print " analyzing MBN/ARG parameterizations"
     if args.parallel:
         print "running in parallel"
-        from IPython.parallel import Client
+        from ipyparallel.client.client import Client
         client = Client(profile='legion')
         dv = client[:]
 
@@ -97,7 +97,7 @@ if __name__ == "__main__":
         print "Writing results to", sample_fn
 
         fn = model_run.__dict__[exp_dict['function_name']]
-        results_df = pd.DataFrame(index=design_df.index)
+        results_df = pd.DataFrame(index=design_df.index[:args.n])
 
         ## Set up some parallel processing arguments if they're going
         ## to be used
@@ -134,7 +134,9 @@ if __name__ == "__main__":
             else:
                 results = []
                 for i, z in enumerate(design.T):
+                    print i, z,
                     result = fn(*z)
+                    print result
                     results.append(result)
             results = np.array(results[:])
 
@@ -146,6 +148,8 @@ if __name__ == "__main__":
             results_df['Nkn_parcel'] = results[:, 2]
 
             print "done."
+
+        print results_df[['Neq_parcel', 'Nkn_parcel']].head()
 
         ## Chaos expansions
         # Load into memory
@@ -214,6 +218,6 @@ if __name__ == "__main__":
         ## Save final results
         print "Saving to disk at %s" % sample_fn
         if args.reference:
-            results_df.index = stored_design.index
+            results_df.index = stored_design.index[:args.n]
         results_df.to_csv(sample_fn)
 
