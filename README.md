@@ -1,6 +1,8 @@
+---
 Title: Single-mode Activation Parameterization using PCM / DAKOTA
 Author: Daniel Rothenberg
 Date: June 8, 2015
+...
 
 This repository archives the scripts used to perform polynomial chaos expansions using the probabilistic collocation method with the DAKOTA software. Please see the [File Summary] for details on each particular file, including the output with which each is associated.
 
@@ -123,3 +125,6 @@ Note that deprecated or non-maintained scripts are denoted with *italics*. Outpu
     - ``${exp_name}_sobol.dict``
     - ``sobol.df`` 
 
+## Source Code
+
+This code is archived [on github](https://github.com/darothen/single_mode_chaos).
